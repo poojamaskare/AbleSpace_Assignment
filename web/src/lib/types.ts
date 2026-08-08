@@ -35,3 +35,25 @@ export type Board = {
   name: string;
   columns: Column[];
 };
+
+export type Comment = {
+  id: string;
+  body: string;
+  createdAt: string;
+  parentId: string | null;
+  author: UserSummary;
+};
+
+export type Activity = {
+  id: string;
+  message: string;
+  createdAt: string;
+  actor: UserSummary | null;
+};
+
+export type TaskDetail = Task & {
+  reporter: UserSummary | null;
+  subtasks: Task[];
+  comments: Comment[];
+  activities: Activity[];
+};

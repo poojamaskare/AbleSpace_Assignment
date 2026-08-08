@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronsUpDown, Moon, Settings, Sun } from "lucide-react";
+import { ChevronsUpDown, LogOut, Moon, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 
-import { useSession } from "@/components/auth/session-provider";
+import { useSession, useSignOut } from "@/components/auth/session-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -43,6 +43,7 @@ function Check({ shown }: { shown: boolean }) {
 
 export function UserMenu() {
   const user = useSession();
+  const signOut = useSignOut();
   const { mode, accent, setMode, setAccent } = useTheme();
 
   const initials = user.name.slice(0, 2).toUpperCase();
@@ -138,6 +139,14 @@ export function UserMenu() {
               <Settings className="size-4" />
               Settings
             </Link>
+          </DropdownMenuItem>
+
+          {/* Not in the Figma, but a guest session with no way out is a dead
+              end — the design's nearest equivalent is "Leave Workspace" on the
+              settings screen. Noted in the README deviations. */}
+          <DropdownMenuItem className="gap-2" onSelect={signOut}>
+            <LogOut className="size-4" />
+            Log out
           </DropdownMenuItem>
         </div>
       </DropdownMenuContent>

@@ -16,6 +16,13 @@ const TASK_INCLUDE = {
   _count: { select: { subtasks: true, comments: true } },
 } as const;
 
+/** Maps an optional-nullable date field onto a Prisma update value. */
+function toDateUpdate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined; // field absent — no change
+  if (value === null) return null; // explicit null — clear the column
+  return new Date(value);
+}
+
 @Injectable()
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
@@ -139,8 +146,10 @@ export class TasksService {
         title: dto.title,
         description: dto.description,
         priority: dto.priority as Priority | undefined,
-        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        // null means "clear it", undefined means "leave it alone". Collapsing
+        // both to undefined would make clearing a date silently do nothing.
+        startDate: toDateUpdate(dto.startDate),
+        dueDate: toDateUpdate(dto.dueDate),
         labels: dto.labelIds ? { set: dto.labelIds.map((i) => ({ id: i })) } : undefined,
       },
       include: TASK_INCLUDE,
