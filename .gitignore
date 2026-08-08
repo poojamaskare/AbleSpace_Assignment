@@ -1,0 +1,10 @@
+.figma-token
+node_modules/
+.next/
+dist/
+.env
+.env.local
+*.db
+designs/
+*.pdf
+design-comments.json

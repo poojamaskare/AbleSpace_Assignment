@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  username  String?
+  title     String?
+  avatarUrl String?
+  isGuest   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  ledProjects   Project[] @relation("ProjectLead")
+  reportedTasks Task[]    @relation("TaskReporter")
+  assignedTasks Task[]    @relation("TaskAssignees")
+  comments      Comment[]
+  activities    Activity[]
+}
+
+model Project {
+  id        String    @id @default(cuid())
+  name      String
+  priority  Priority  @default(NONE)
+  dueDate   DateTime?
+  position  Float     @default(0)
+  createdAt DateTime  @default(now())
+
+  leadId String?
+  lead   User?   @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+
+  columns Column[]
+  tasks   Task[]
+}
+
+/// Board columns (To Do / Doing / Completed / On Hold). A table, not an enum —
+/// the design gives each column header a six-dot drag grip, so they reorder.
+model Column {
+  id       String @id @default(cuid())
+  name     String
+  position Float
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  tasks Task[]
+
+  @@index([projectId, position])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  priority    Priority  @default(NONE)
+  startDate   DateTime?
+  dueDate     DateTime?
+  /// Sparse ordering: reordering writes one row (midpoint between neighbours)
+  /// instead of renumbering the whole column.
+  position    Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  columnId String
+  column   Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  reporterId String?
+  reporter   User?   @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+
+  /// Subtasks: the detail screen nests a task table one level deep.
+  parentId String?
+  parent   Task?   @relation("Subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks Task[]  @relation("Subtasks")
+
+  assignees  User[]     @relation("TaskAssignees")
+  labels     Label[]    @relation("TaskLabels")
+  comments   Comment[]
+  activities Activity[]
+
+  @@index([columnId, position])
+  @@index([projectId])
+  @@index([parentId])
+}
+
+model Label {
+  id    String @id @default(cuid())
+  name  String @unique
+  tasks Task[] @relation("TaskLabels")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  /// One level of threading — the design shows "Leave a reply..." under a comment.
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([taskId, createdAt])
+}
+
+/// Powers the "Updates" feed on the task detail screen
+/// ("changed priority from No priority to Urgent").
+model Activity {
+  id        String   @id @default(cuid())
+  message   String
+  createdAt DateTime @default(now())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+}
