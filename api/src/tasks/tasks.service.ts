@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Priority } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,7 +28,12 @@ export class TasksService {
   private async assertOwnedTask(userId: string, taskId: string) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
-      select: { id: true, columnId: true, project: { select: { leadId: true } } },
+      select: {
+        id: true,
+        columnId: true,
+        projectId: true,
+        project: { select: { leadId: true } },
+      },
     });
 
     if (!task) throw new NotFoundException('Task not found');
@@ -44,6 +54,23 @@ export class TasksService {
       throw new ForbiddenException('Not your column');
     }
     return column;
+  }
+
+  /**
+   * Labels are project-scoped, so a labelId from the client must be proven to
+   * belong to the same project before it is connected — otherwise the scoping
+   * added to the Label model is trivially bypassed through this field.
+   */
+  private async assertLabelsInProject(projectId: string, labelIds: string[]) {
+    if (labelIds.length === 0) return;
+
+    const found = await this.prisma.label.count({
+      where: { projectId, id: { in: labelIds } },
+    });
+
+    if (found !== new Set(labelIds).size) {
+      throw new BadRequestException('One or more labels do not belong to this project');
+    }
   }
 
   findOne(userId: string, id: string) {
@@ -72,6 +99,7 @@ export class TasksService {
 
   async create(userId: string, dto: CreateTaskDto) {
     const column = await this.assertOwnedColumn(userId, dto.columnId);
+    await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
 
     const last = await this.prisma.task.findFirst({
       where: { columnId: dto.columnId, parentId: dto.parentId ?? null },
@@ -102,7 +130,8 @@ export class TasksService {
   }
 
   async update(userId: string, id: string, dto: UpdateTaskDto) {
-    await this.assertOwnedTask(userId, id);
+    const task = await this.assertOwnedTask(userId, id);
+    if (dto.labelIds) await this.assertLabelsInProject(task.projectId, dto.labelIds);
 
     return this.prisma.task.update({
       where: { id },

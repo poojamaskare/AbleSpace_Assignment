@@ -4,7 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const COLUMNS = ['To Do', 'Doing', 'Completed', 'On Hold'];
 
-const LABELS = ['Research', 'Design', 'Development', 'Testing', 'Deployment'];
+/** Labels a new project starts with, mirroring the Figma detail screen. Seed
+ *  content only — the owner manages labels through /projects/:id/labels. */
+const STARTER_LABELS = ['Research', 'Design', 'Development', 'Testing', 'Deployment'];
 
 /** Tasks mirroring the Figma board so a fresh guest sees a populated app
  *  rather than an empty state that reads as broken. */
@@ -102,17 +104,6 @@ export async function createStarterWorkspace(
   prisma: PrismaService,
   userId: string,
 ) {
-  const labels = await Promise.all(
-    LABELS.map((name) =>
-      prisma.label.upsert({
-        where: { name },
-        create: { name },
-        update: {},
-      }),
-    ),
-  );
-  const labelByName = new Map(labels.map((l) => [l.name, l.id]));
-
   const project = await prisma.project.create({
     data: {
       name: 'Design Homepage',
@@ -123,10 +114,14 @@ export async function createStarterWorkspace(
       columns: {
         create: COLUMNS.map((name, i) => ({ name, position: (i + 1) * 1000 })),
       },
+      // Starter content, not a fixed vocabulary: these rows belong to this
+      // project and the owner can rename, delete or add to them freely.
+      labels: { create: STARTER_LABELS.map((name) => ({ name })) },
     },
-    include: { columns: true },
+    include: { columns: true, labels: true },
   });
 
+  const labelByName = new Map(project.labels.map((l) => [l.name, l.id]));
   const columnByName = new Map(project.columns.map((c) => [c.name, c.id]));
   const positionInColumn = new Map<string, number>();
 

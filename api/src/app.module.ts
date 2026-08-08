@@ -4,8 +4,10 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { LabelsModule } from './labels/labels.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { ProjectsModule } from './projects/projects.module';
     PrismaModule,
     AuthModule,
     ProjectsModule,
+    TasksModule,
+    LabelsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
