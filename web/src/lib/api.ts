@@ -20,14 +20,21 @@ export class ApiError extends Error {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
 
-  const res = await fetch(`${BASE_URL}/api${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
+  } catch {
+    // fetch only rejects on network failure, and its native message
+    // ("Failed to fetch") tells a user nothing actionable.
+    throw new ApiError(0, "Can't reach the server. Is the API running?");
+  }
 
   if (!res.ok) {
     const message = await res
