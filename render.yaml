@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: ablespace-api
+    runtime: node
+    rootDir: api
+    plan: free
+    region: singapore
+    buildCommand: npm ci && npx prisma generate && npm run build
+    # Migrations run at start, not build: Render's build step has no guaranteed
+    # network path to the database, the runtime one does.
+    startCommand: npx prisma migrate deploy && node dist/main
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL # Neon pooled connection string
+        sync: false
+      - key: CORS_ORIGIN # https://<your-app>.vercel.app
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
