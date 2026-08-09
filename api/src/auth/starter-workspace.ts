@@ -2,11 +2,13 @@ import { Priority } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-const COLUMNS = ['To Do', 'Doing', 'Completed', 'On Hold'];
+/** Columns a new project starts with, mirroring the Figma board. Seed content
+ *  only — the owner renames, reorders, adds and deletes them freely. */
+export const STARTER_COLUMNS = ['To Do', 'Doing', 'Completed', 'On Hold'];
 
 /** Labels a new project starts with, mirroring the Figma detail screen. Seed
  *  content only — the owner manages labels through /projects/:id/labels. */
-const STARTER_LABELS = ['Research', 'Design', 'Development', 'Testing', 'Deployment'];
+export const STARTER_LABELS = ['Research', 'Design', 'Development', 'Testing', 'Deployment'];
 
 /** Tasks mirroring the Figma board so a fresh guest sees a populated app
  *  rather than an empty state that reads as broken. */
@@ -96,28 +98,22 @@ const daysFromNow = (days: number) =>
   new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 /**
- * Give a newly created user a project with the design's columns and tasks.
- * Position values are spaced by 1000 so drag-and-drop can insert at the
- * midpoint between neighbours without renumbering siblings.
+ * Fill an existing project with the design's example tasks.
+ *
+ * Split out from user signup so any newly created project gets the same
+ * starting content — a project whose board is empty on arrival reads as broken
+ * rather than as new. Safe to call only on an empty project; it appends.
+ *
+ * Positions are spaced by 1000 so drag-and-drop can insert at the midpoint
+ * between neighbours without renumbering siblings.
  */
-export async function createStarterWorkspace(
+export async function seedProjectTasks(
   prisma: PrismaService,
+  projectId: string,
   userId: string,
 ) {
-  const project = await prisma.project.create({
-    data: {
-      name: 'Design Homepage',
-      priority: Priority.HIGH,
-      leadId: userId,
-      dueDate: daysFromNow(30),
-      position: 1000,
-      columns: {
-        create: COLUMNS.map((name, i) => ({ name, position: (i + 1) * 1000 })),
-      },
-      // Starter content, not a fixed vocabulary: these rows belong to this
-      // project and the owner can rename, delete or add to them freely.
-      labels: { create: STARTER_LABELS.map((name) => ({ name })) },
-    },
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
     include: { columns: true, labels: true },
   });
 

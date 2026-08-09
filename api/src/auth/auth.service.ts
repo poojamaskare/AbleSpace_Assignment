@@ -1,8 +1,13 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { createStarterWorkspace } from './starter-workspace';
 
 @Injectable()
@@ -35,6 +40,32 @@ export class AuthService {
       accessToken: await this.jwt.signAsync({ sub: user.id }),
       user: this.toPublicUser(user),
     };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    if (dto.email) {
+      const taken = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+      // Email is unique in the schema; surface the clash instead of letting the
+      // constraint surface as a 500.
+      if (taken && taken.id !== userId) {
+        throw new ConflictException('That email is already in use');
+      }
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: dto.name,
+        email: dto.email,
+        title: dto.title,
+        username: dto.username,
+      },
+    });
+
+    return this.toPublicUser(user);
   }
 
   async findById(userId: string) {

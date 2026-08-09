@@ -1,7 +1,18 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { ProjectsService } from './projects.service';
 
 @Controller('projects')
@@ -22,5 +33,25 @@ export class ProjectsController {
   @Get(':id/board')
   findBoard(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.projects.findBoard(userId, id);
+  }
+
+  @Post()
+  create(@CurrentUser() userId: string, @Body() dto: CreateProjectDto) {
+    return this.projects.create(userId, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateProjectDto,
+  ) {
+    return this.projects.update(userId, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.projects.remove(userId, id);
   }
 }

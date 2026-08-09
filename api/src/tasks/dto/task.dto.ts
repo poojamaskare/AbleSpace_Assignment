@@ -33,8 +33,10 @@ export class CreateTaskDto {
   @MaxLength(5000)
   description?: string;
 
+  /** Omit for a subtask — it inherits its parent's column and project. */
+  @IsOptional()
   @IsString()
-  columnId!: string;
+  columnId?: string;
 
   @IsOptional()
   @IsEnum(PriorityDto)

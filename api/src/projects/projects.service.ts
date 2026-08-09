@@ -1,6 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Priority } from '@prisma/client';
 
+import { STARTER_COLUMNS, STARTER_LABELS } from '../auth/starter-workspace';
 import { PrismaService } from '../prisma/prisma.service';
+import { positionFor } from '../tasks/position';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 
 /** Fields every task-shaped response returns, so the board, the list view and
  *  the detail screen all read the same shape. */
@@ -51,6 +60,78 @@ export class ProjectsService {
     });
 
     if (!project) throw new NotFoundException('Project not found');
+    return project;
+  }
+
+  /**
+   * A new project gets the same starting columns and labels a guest's first
+   * project does, so it is immediately usable instead of an empty shell.
+   */
+  async create(userId: string, dto: CreateProjectDto) {
+    const last = await this.prisma.project.findFirst({
+      where: { leadId: userId },
+      orderBy: { position: 'desc' },
+      select: { position: true },
+    });
+
+    return this.prisma.project.create({
+      data: {
+        name: dto.name,
+        priority: (dto.priority as Priority) ?? Priority.NONE,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        leadId: userId,
+        position: positionFor(last ? [last.position] : [], last ? 1 : 0),
+        columns: {
+          create: STARTER_COLUMNS.map((name, i) => ({ name, position: (i + 1) * 1000 })),
+        },
+        labels: { create: STARTER_LABELS.map((name) => ({ name })) },
+      },
+      include: {
+        lead: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { tasks: true } },
+      },
+    });
+  }
+
+  async update(userId: string, projectId: string, dto: UpdateProjectDto) {
+    await this.assertOwned(userId, projectId);
+
+    return this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        name: dto.name,
+        priority: dto.priority as Priority | undefined,
+        // null clears the date; undefined leaves it untouched.
+        dueDate:
+          dto.dueDate === undefined ? undefined : dto.dueDate ? new Date(dto.dueDate) : null,
+      },
+      include: {
+        lead: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { tasks: true } },
+      },
+    });
+  }
+
+  async remove(userId: string, projectId: string) {
+    await this.assertOwned(userId, projectId);
+
+    const remaining = await this.prisma.project.count({ where: { leadId: userId } });
+    // Deleting the last project would leave /tasks with nothing to open onto.
+    if (remaining <= 1) {
+      throw new BadRequestException('You need at least one project');
+    }
+
+    await this.prisma.project.delete({ where: { id: projectId } });
+  }
+
+  private async assertOwned(userId: string, projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, leadId: true },
+    });
+
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.leadId !== userId) throw new ForbiddenException('Not your project');
     return project;
   }
 
