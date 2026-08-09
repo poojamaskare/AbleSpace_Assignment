@@ -4,12 +4,18 @@ Web → Vercel, API → Render, Postgres → Neon.
 
 ## 1. Neon
 
-Create a project, copy the **direct** connection string — the one *without*
-`-pooler` in the host (uncheck "Connection pooling" in the dashboard).
+Create a project, copy the **pooled** connection string (`...-pooler...`).
 
-Not the pooled one: `prisma migrate deploy` takes an advisory lock that
-pgbouncer cannot hold, so the start command hangs forever and the service never
-binds a port. A single Render instance has no need for the pooler anyway.
+Apply migrations from your machine, once per schema change — Render does not
+run them:
+
+```bash
+cd api && npx prisma migrate deploy   # DATABASE_URL from api/.env
+```
+
+They are deliberately not in the start command: through the pooler the
+advisory lock hangs forever and the service never binds a port, and Neon's
+direct host is unreachable from Render.
 
 ## 2. API on Render
 

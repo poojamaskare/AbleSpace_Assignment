@@ -8,9 +8,12 @@ services:
     # --include=dev: Render sets NODE_ENV=production, which makes npm ci skip
     # devDependencies — where the nest and prisma CLIs live.
     buildCommand: npm ci --include=dev && npx prisma generate && npm run build
-    # Migrations run at start, not build: Render's build step has no guaranteed
-    # network path to the database, the runtime one does.
-    startCommand: npx prisma migrate deploy && node dist/main
+    # ponytail: migrations are applied by hand (`npx prisma migrate deploy` from
+    # a laptop) rather than gating startup. Through Neon's pooler the advisory
+    # lock hangs forever; the direct host isn't reachable from here. Two schema
+    # changes total — not worth a release pipeline. Move it back into the start
+    # command if deploys ever outpace someone remembering to run it.
+    startCommand: node dist/main
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
