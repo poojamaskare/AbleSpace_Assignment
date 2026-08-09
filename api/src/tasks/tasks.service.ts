@@ -16,6 +16,15 @@ const TASK_INCLUDE = {
   _count: { select: { subtasks: true, comments: true } },
 } as const;
 
+/** Human-readable priority names for the activity feed. */
+const PRIORITY_LABELS: Record<Priority, string> = {
+  NONE: 'No priority',
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+  URGENT: 'Urgent',
+};
+
 /** Maps an optional-nullable date field onto a Prisma update value. */
 function toDateUpdate(value: string | null | undefined): Date | null | undefined {
   if (value === undefined) return undefined; // field absent — no change
@@ -35,10 +44,15 @@ export class TasksService {
   private async assertOwnedTask(userId: string, taskId: string) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
+      // Selects everything the callers need (ownership, placement, and the
+      // fields the activity feed narrates) so update() needs no second read.
       select: {
         id: true,
         columnId: true,
         projectId: true,
+        title: true,
+        priority: true,
+        dueDate: true,
         project: { select: { leadId: true } },
       },
     });
@@ -105,14 +119,40 @@ export class TasksService {
   }
 
   async create(userId: string, dto: CreateTaskDto) {
-    const column = await this.assertOwnedColumn(userId, dto.columnId);
-    await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
+    // A subtask lives wherever its parent lives; only top-level tasks need a
+    // column from the client.
+    let columnId = dto.columnId;
+    if (dto.parentId) {
+      const parent = await this.assertOwnedTask(userId, dto.parentId);
+      columnId = parent.columnId;
+    }
 
-    const last = await this.prisma.task.findFirst({
-      where: { columnId: dto.columnId, parentId: dto.parentId ?? null },
-      orderBy: { position: 'desc' },
-      select: { position: true },
+    if (!columnId) {
+      throw new BadRequestException('columnId is required for a top-level task');
+    }
+
+    // One query for ownership AND the trailing position — each extra round
+    // trip to the database costs real latency on every card created.
+    const column = await this.prisma.column.findUnique({
+      where: { id: columnId },
+      select: {
+        id: true,
+        projectId: true,
+        project: { select: { leadId: true } },
+        tasks: {
+          where: { parentId: dto.parentId ?? null },
+          orderBy: { position: 'desc' },
+          take: 1,
+          select: { position: true },
+        },
+      },
     });
+
+    if (!column) throw new NotFoundException('Column not found');
+    if (column.project.leadId !== userId) throw new ForbiddenException('Not your column');
+
+    await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
+    const last = column.tasks[0];
 
     return this.prisma.task.create({
       data: {
@@ -140,7 +180,11 @@ export class TasksService {
     const task = await this.assertOwnedTask(userId, id);
     if (dto.labelIds) await this.assertLabelsInProject(task.projectId, dto.labelIds);
 
-    return this.prisma.task.update({
+    // Read the fields we narrate before writing, so the activity entry can name
+    // what actually changed rather than just what was sent.
+    const before = task;
+
+    const updated = await this.prisma.task.update({
       where: { id },
       data: {
         title: dto.title,
@@ -153,6 +197,43 @@ export class TasksService {
         labels: dto.labelIds ? { set: dto.labelIds.map((i) => ({ id: i })) } : undefined,
       },
       include: TASK_INCLUDE,
+    });
+
+    await this.recordChanges(id, userId, before, updated);
+    return updated;
+  }
+
+  /** Narrate the field changes the design's Updates panel shows. */
+  private async recordChanges(
+    taskId: string,
+    actorId: string,
+    before: { priority: Priority; dueDate: Date | null; title: string },
+    after: { priority: Priority; dueDate: Date | null; title: string },
+  ) {
+    const messages: string[] = [];
+
+    if (before.priority !== after.priority) {
+      messages.push(
+        `changed priority from ${PRIORITY_LABELS[before.priority]} to ${PRIORITY_LABELS[after.priority]}`,
+      );
+    }
+
+    if (before.dueDate?.getTime() !== after.dueDate?.getTime()) {
+      messages.push(
+        after.dueDate
+          ? `set the due date to ${after.dueDate.toISOString().slice(0, 10)}`
+          : 'removed the due date',
+      );
+    }
+
+    if (before.title !== after.title) {
+      messages.push(`renamed this task from "${before.title}"`);
+    }
+
+    if (messages.length === 0) return;
+
+    await this.prisma.activity.createMany({
+      data: messages.map((message) => ({ taskId, actorId, message })),
     });
   }
 
