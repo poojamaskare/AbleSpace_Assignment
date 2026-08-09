@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  // prisma.config.ts is CLI-only config, and compiling it drags the common
+  // source root up to api/, which nests the output under dist/src/ and breaks
+  // `node dist/main`.
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "prisma.config.ts"]
 }
