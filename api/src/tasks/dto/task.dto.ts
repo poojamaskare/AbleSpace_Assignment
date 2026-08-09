@@ -11,6 +11,8 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { Trim } from '../../common/trim.decorator';
+
 export enum PriorityDto {
   NONE = 'NONE',
   LOW = 'LOW',
@@ -20,6 +22,7 @@ export enum PriorityDto {
 }
 
 export class CreateTaskDto {
+  @Trim()
   @IsString()
   @MinLength(1, { message: 'Title cannot be empty' })
   @MaxLength(200)
@@ -54,6 +57,7 @@ export class CreateTaskDto {
 
 export class UpdateTaskDto {
   @IsOptional()
+  @Trim()
   @IsString()
   @MinLength(1, { message: 'Title cannot be empty' })
   @MaxLength(200)

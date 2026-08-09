@@ -1,15 +1,19 @@
 "use client";
 
-import { Columns3, Search } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AddTaskDialog } from "@/components/board/add-task-dialog";
 import { BoardView } from "@/components/board/board-view";
+import { ListView } from "@/components/board/list-view";
 import { EMPTY_FILTERS, TaskFilter, type Filters } from "@/components/board/task-filter";
+import { ViewMenu } from "@/components/board/view-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
+import { filterColumns } from "@/lib/board";
 import type { Board, Priority, Task } from "@/lib/types";
+import { DEFAULT_VIEW, STORAGE_KEY, parseView, type ViewPrefs } from "@/lib/view";
 
 type NewTask = {
   title: string;
@@ -25,6 +29,7 @@ export default function TasksPage() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [view, setView] = useState<ViewPrefs>(DEFAULT_VIEW);
 
   useEffect(() => {
     apiFetch<Board>("/projects/default/board")
@@ -32,27 +37,112 @@ export default function TasksPage() {
       .catch((e: Error) => setError(e.message));
   }, []);
 
-  // Single creation path for both the header dialog and each column's inline
-  // composer, so they can never drift apart.
-  const createTask = useCallback(
-    async (input: NewTask) => {
-      const created = await apiFetch<Task>("/tasks", {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
+  // Restored after mount so server and client markup agree on first render.
+  useEffect(() => {
+    setView(parseView(localStorage.getItem(STORAGE_KEY)));
+  }, []);
+
+  const updateView = useCallback((next: ViewPrefs) => {
+    setView(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  /** Single creation path for the dialog and both views' inline composers. */
+  const createTask = useCallback(async (input: NewTask) => {
+    const created = await apiFetch<Task>("/tasks", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    setBoard((current) =>
+      current
+        ? {
+            ...current,
+            columns: current.columns.map((c) =>
+              c.id === input.columnId ? { ...c, tasks: [...c.tasks, created] } : c,
+            ),
+          }
+        : current,
+    );
+  }, []);
+
+  const deleteTask = useCallback(async (taskId: string) => {
+    let previous: Board | null = null;
+
+    setBoard((current) => {
+      previous = current;
+      return current
+        ? {
+            ...current,
+            columns: current.columns.map((c) => ({
+              ...c,
+              tasks: c.tasks.filter((t) => t.id !== taskId),
+            })),
+          }
+        : current;
+    });
+
+    try {
+      await apiFetch(`/tasks/${taskId}`, { method: "DELETE" });
+    } catch {
+      if (previous) setBoard(previous);
+    }
+  }, []);
+
+  const createColumn = useCallback(
+    async (name: string) => {
+      if (!board) return;
+      const created = await apiFetch<{ id: string; name: string; position: number }>(
+        `/projects/${board.id}/columns`,
+        { method: "POST", body: JSON.stringify({ name }) },
+      );
 
       setBoard((current) =>
         current
-          ? {
-              ...current,
-              columns: current.columns.map((c) =>
-                c.id === input.columnId ? { ...c, tasks: [...c.tasks, created] } : c,
-              ),
-            }
+          ? { ...current, columns: [...current.columns, { ...created, tasks: [] }] }
           : current,
       );
     },
-    [],
+    [board],
+  );
+
+  const renameColumn = useCallback(async (columnId: string, name: string) => {
+    setBoard((current) =>
+      current
+        ? {
+            ...current,
+            columns: current.columns.map((c) => (c.id === columnId ? { ...c, name } : c)),
+          }
+        : current,
+    );
+
+    await apiFetch(`/columns/${columnId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+  }, []);
+
+  const deleteColumn = useCallback(async (columnId: string) => {
+    let previous: Board | null = null;
+    setBoard((current) => {
+      previous = current;
+      return current
+        ? { ...current, columns: current.columns.filter((c) => c.id !== columnId) }
+        : current;
+    });
+
+    try {
+      await apiFetch(`/columns/${columnId}`, { method: "DELETE" });
+    } catch (e) {
+      // e.g. the API refusing to remove the last column.
+      if (previous) setBoard(previous);
+      setError(e instanceof Error ? e.message : "Could not delete column");
+    }
+  }, []);
+
+  const visibleColumns = useMemo(
+    () => (board ? filterColumns(board.columns, query, filters) : []),
+    [board, query, filters],
   );
 
   return (
@@ -82,22 +172,12 @@ export default function TasksPage() {
           </Button>
         )}
 
-        <Button variant="outline" className="h-9 gap-1.5" disabled>
-          <Columns3 className="size-4" />
-          Fields
-        </Button>
+        <ViewMenu view={view} onChange={updateView} />
 
         {board ? (
           <>
-            <TaskFilter
-              projectId={board.id}
-              filters={filters}
-              onChange={setFilters}
-            />
-            <AddTaskDialog
-              columns={board.columns}
-              onCreate={(input) => createTask(input)}
-            />
+            <TaskFilter projectId={board.id} filters={filters} onChange={setFilters} />
+            <AddTaskDialog columns={board.columns} onCreate={createTask} />
           </>
         ) : null}
       </div>
@@ -105,16 +185,26 @@ export default function TasksPage() {
       <div className="min-h-0 flex-1">
         {error ? (
           <p className="px-4 text-sm text-destructive">{error}</p>
-        ) : board ? (
+        ) : !board ? (
+          <p className="px-4 text-sm text-muted-foreground">Loading board…</p>
+        ) : view.mode === "list" ? (
+          <ListView
+            columns={visibleColumns}
+            view={view}
+            onCreateTask={(columnId, title) => void createTask({ columnId, title })}
+            onDeleteTask={(id) => void deleteTask(id)}
+          />
+        ) : (
           <BoardView
             board={board}
             setBoard={setBoard}
-            query={query}
-            filters={filters}
-            onCreateTask={(columnId, title) => createTask({ columnId, title })}
+            columns={visibleColumns}
+            onCreateTask={(columnId, title) => void createTask({ columnId, title })}
+            onDeleteTask={(id) => void deleteTask(id)}
+            onCreateColumn={(name) => void createColumn(name)}
+            onRenameColumn={(id, name) => void renameColumn(id, name)}
+            onDeleteColumn={(id) => void deleteColumn(id)}
           />
-        ) : (
-          <p className="px-4 text-sm text-muted-foreground">Loading board…</p>
         )}
       </div>
     </div>

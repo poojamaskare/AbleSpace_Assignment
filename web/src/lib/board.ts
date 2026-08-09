@@ -7,6 +7,67 @@ export type MoveResult = {
   index: number;
 };
 
+/**
+ * Narrow every column's tasks by search text, priorities and labels. Criteria
+ * compose — a task must satisfy all active ones. Column structure is preserved
+ * so an emptied column still renders (and still accepts drops).
+ *
+ * Shared by the board and list views so the two can never disagree about what
+ * a filter means.
+ */
+export function filterColumns(
+  columns: Column[],
+  query: string,
+  filters: { priorities: string[]; labelIds: string[] },
+): Column[] {
+  const needle = query.trim().toLowerCase();
+  const active =
+    needle.length > 0 || filters.priorities.length > 0 || filters.labelIds.length > 0;
+
+  if (!active) return columns;
+
+  return columns.map((column) => ({
+    ...column,
+    tasks: column.tasks.filter((task) => {
+      if (needle && !task.title.toLowerCase().includes(needle)) return false;
+      if (filters.priorities.length && !filters.priorities.includes(task.priority)) {
+        return false;
+      }
+      if (
+        filters.labelIds.length &&
+        !task.labels.some((l) => filters.labelIds.includes(l.id))
+      ) {
+        return false;
+      }
+      return true;
+    }),
+  }));
+}
+
+/**
+ * Reorder whole columns. Ids are prefixed (`col:<id>`) in the DnD layer so a
+ * column drag can never be mistaken for a card drag — both live in the same
+ * DndContext and would otherwise share an id namespace.
+ */
+export const COLUMN_DND_PREFIX = "col:";
+
+export function moveColumn(
+  columns: Column[],
+  activeId: string,
+  overId: string,
+): { columns: Column[]; index: number } | null {
+  const from = columns.findIndex((c) => c.id === activeId);
+  const to = columns.findIndex((c) => c.id === overId);
+
+  if (from === -1 || to === -1 || from === to) return null;
+
+  const next = [...columns];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+
+  return { columns: next, index: to };
+}
+
 function locate(columns: Column[], taskId: string) {
   for (let c = 0; c < columns.length; c++) {
     const t = columns[c].tasks.findIndex((task) => task.id === taskId);

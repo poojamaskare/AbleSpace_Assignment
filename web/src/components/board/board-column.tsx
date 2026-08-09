@@ -1,11 +1,19 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { TaskCard } from "@/components/board/task-card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { COLUMN_DND_PREFIX } from "@/lib/board";
 import type { Column } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -45,32 +53,75 @@ export function BoardColumn({
   column,
   onCreateTask,
   onDeleteTask,
+  onRenameColumn,
+  onDeleteColumn,
 }: {
   column: Column;
   onCreateTask: (columnId: string, title: string) => void;
   onDeleteTask: (taskId: string) => void;
+  onRenameColumn: (columnId: string, name: string) => void;
+  onDeleteColumn: (columnId: string) => void;
 }) {
   const [composing, setComposing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
-  // Droppable on the column body so an empty column still accepts a card —
-  // SortableContext alone offers no drop target when it holds no items.
-  const { setNodeRef, isOver } = useDroppable({
-    id: column.id,
-    data: { type: "column", columnId: column.id },
-  });
+  // The column is sortable under a prefixed id so a column drag is never
+  // confused with a card drag — both share one DndContext.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `${COLUMN_DND_PREFIX}${column.id}` });
+
+  // Separate droppable on the body, keyed by the raw column id, so an empty
+  // column still accepts a card.
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: column.id });
 
   return (
     <section
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         "flex w-[300px] shrink-0 flex-col rounded-xl border bg-muted/40 transition-colors",
         isOver && "bg-muted",
+        isDragging && "opacity-50",
       )}
       aria-label={column.name}
     >
       <header className="flex items-center gap-1.5 px-3 py-2.5">
-        <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground" />
-        <h2 className="flex-1 truncate text-sm font-medium">{column.name}</h2>
+        <button
+          type="button"
+          aria-label={`Reorder ${column.name}`}
+          className="shrink-0 cursor-grab rounded text-muted-foreground active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+
+        {renaming ? (
+          <form
+            className="flex-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const input = e.currentTarget.elements[0] as HTMLInputElement;
+              const name = input.value.trim();
+              if (name && name !== column.name) onRenameColumn(column.id, name);
+              setRenaming(false);
+            }}
+          >
+            <input
+              autoFocus
+              defaultValue={column.name}
+              onBlur={() => setRenaming(false)}
+              onKeyDown={(e) => e.key === "Escape" && setRenaming(false)}
+              aria-label="Column name"
+              className="w-full rounded border bg-card px-1.5 py-0.5 text-sm outline-none"
+            />
+          </form>
+        ) : (
+          <h2 className="flex-1 truncate text-sm font-medium">{column.name}</h2>
+        )}
+
         <span className="text-xs text-muted-foreground">{column.tasks.length}</span>
+
         <button
           type="button"
           aria-label={`Add task to ${column.name}`}
@@ -79,16 +130,32 @@ export function BoardColumn({
         >
           <Plus className="size-4" />
         </button>
-        <button
-          type="button"
-          aria-label={`Options for ${column.name}`}
-          className="rounded p-0.5 text-muted-foreground hover:bg-accent"
-        >
-          <MoreHorizontal className="size-4" />
-        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label={`Options for ${column.name}`}
+            className="rounded p-0.5 text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={() => setRenaming(true)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setComposing(true)}>
+              Add task
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              className="gap-2"
+              onSelect={() => onDeleteColumn(column.id)}
+            >
+              <Trash2 className="size-4" />
+              Delete column
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
-      <div ref={setNodeRef} className="flex min-h-2 flex-1 flex-col gap-2 px-2 pb-2">
+      <div ref={setDropRef} className="flex min-h-2 flex-1 flex-col gap-2 px-2 pb-2">
         <SortableContext
           items={column.tasks.map((t) => t.id)}
           strategy={verticalListSortingStrategy}

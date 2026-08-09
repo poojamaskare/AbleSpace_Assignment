@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { moveTask } from "./board.ts";
+import { moveColumn, moveTask } from "./board.ts";
 import type { Column, Task } from "./types.ts";
 
 const task = (id: string, columnId: string) =>
@@ -68,6 +68,41 @@ test("dropping a card on itself is a no-op", () => {
 test("unknown ids are ignored", () => {
   assert.equal(moveTask(board(), "nope", "todo"), null);
   assert.equal(moveTask(board(), "a", "nowhere"), null);
+});
+
+test("moves a column to the front", () => {
+  const result = moveColumn(board(), "done", "todo");
+  assert.ok(result);
+  assert.deepEqual(
+    result.columns.map((c) => c.id),
+    ["done", "todo", "doing"],
+  );
+  assert.equal(result.index, 0);
+});
+
+test("moves a column to the end", () => {
+  const result = moveColumn(board(), "todo", "done");
+  assert.ok(result);
+  assert.deepEqual(
+    result.columns.map((c) => c.id),
+    ["doing", "done", "todo"],
+  );
+  assert.equal(result.index, 2);
+});
+
+test("column dropped on itself is a no-op", () => {
+  assert.equal(moveColumn(board(), "todo", "todo"), null);
+  assert.equal(moveColumn(board(), "nope", "todo"), null);
+});
+
+test("moving a column keeps its tasks", () => {
+  const result = moveColumn(board(), "todo", "done");
+  assert.ok(result);
+  const moved = result.columns.find((c) => c.id === "todo")!;
+  assert.deepEqual(
+    moved.tasks.map((t) => t.id),
+    ["a", "b", "c"],
+  );
 });
 
 test("does not mutate the input board", () => {

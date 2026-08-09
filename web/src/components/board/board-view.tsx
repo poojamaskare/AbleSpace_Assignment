@@ -11,68 +11,60 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 
 import { BoardColumn } from "@/components/board/board-column";
 import { TaskCardContent } from "@/components/board/task-card";
-import type { Filters } from "@/components/board/task-filter";
 import { apiFetch } from "@/lib/api";
-import { moveTask } from "@/lib/board";
-import type { Board, Task } from "@/lib/types";
+import { COLUMN_DND_PREFIX, moveColumn, moveTask } from "@/lib/board";
+import type { Board, Column, Task } from "@/lib/types";
+
+const stripPrefix = (id: string) =>
+  id.startsWith(COLUMN_DND_PREFIX) ? id.slice(COLUMN_DND_PREFIX.length) : id;
+
+const isColumnDrag = (id: string) => id.startsWith(COLUMN_DND_PREFIX);
 
 export function BoardView({
   board,
   setBoard,
-  query,
-  filters,
+  columns,
   onCreateTask,
+  onDeleteTask,
+  onCreateColumn,
+  onRenameColumn,
+  onDeleteColumn,
 }: {
   board: Board;
   setBoard: (board: Board) => void;
-  query: string;
-  filters: Filters;
-  onCreateTask: (columnId: string, title: string) => Promise<void>;
+  /** Already filtered for display; mutations still work off the full board. */
+  columns: Column[];
+  onCreateTask: (columnId: string, title: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  onCreateColumn: (name: string) => void;
+  onRenameColumn: (columnId: string, name: string) => void;
+  onDeleteColumn: (columnId: string) => void;
 }) {
   const [dragging, setDragging] = useState<Task | null>(null);
+  const [addingColumn, setAddingColumn] = useState(false);
 
   const sensors = useSensors(
-    // A small distance threshold keeps a click on the card from being swallowed
-    // as a drag.
+    // A small distance threshold keeps a click on a card or grip from being
+    // swallowed as a drag.
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Search and filters compose: a task must satisfy every active criterion.
-  // Filtering is per-column so the board keeps its shape while narrowing.
-  const needle = query.trim().toLowerCase();
-  const filtering =
-    needle.length > 0 || filters.priorities.length > 0 || filters.labelIds.length > 0;
-
-  const visible = filtering
-    ? board.columns.map((column) => ({
-        ...column,
-        tasks: column.tasks.filter((task) => {
-          if (needle && !task.title.toLowerCase().includes(needle)) return false;
-          if (filters.priorities.length && !filters.priorities.includes(task.priority)) {
-            return false;
-          }
-          if (
-            filters.labelIds.length &&
-            !task.labels.some((l) => filters.labelIds.includes(l.id))
-          ) {
-            return false;
-          }
-          return true;
-        }),
-      }))
-    : board.columns;
-
   function handleDragStart(event: DragStartEvent) {
     const id = String(event.active.id);
-    setDragging(
-      board.columns.flatMap((c) => c.tasks).find((t) => t.id === id) ?? null,
-    );
+    if (isColumnDrag(id)) return; // columns render their own move preview
+
+    setDragging(board.columns.flatMap((c) => c.tasks).find((t) => t.id === id) ?? null);
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -80,7 +72,36 @@ export function BoardView({
     const { active, over } = event;
     if (!over) return;
 
-    const result = moveTask(board.columns, String(active.id), String(over.id));
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    if (isColumnDrag(activeId)) {
+      await reorderColumn(stripPrefix(activeId), stripPrefix(overId));
+      return;
+    }
+
+    await reorderTask(activeId, overId);
+  }
+
+  async function reorderColumn(activeId: string, overId: string) {
+    const result = moveColumn(board.columns, activeId, overId);
+    if (!result) return;
+
+    const previous = board;
+    setBoard({ ...board, columns: result.columns });
+
+    try {
+      await apiFetch(`/columns/${activeId}/move`, {
+        method: "PATCH",
+        body: JSON.stringify({ index: result.index }),
+      });
+    } catch {
+      setBoard(previous);
+    }
+  }
+
+  async function reorderTask(activeId: string, overId: string) {
+    const result = moveTask(board.columns, activeId, overId);
     if (!result) return;
 
     const previous = board;
@@ -88,29 +109,12 @@ export function BoardView({
     setBoard({ ...board, columns: result.columns });
 
     try {
-      await apiFetch(`/tasks/${active.id}/move`, {
+      await apiFetch(`/tasks/${activeId}/move`, {
         method: "PATCH",
         body: JSON.stringify({ columnId: result.columnId, index: result.index }),
       });
     } catch {
       setBoard(previous); // Roll back so the UI never lies about what persisted.
-    }
-  }
-
-  async function handleDeleteTask(taskId: string) {
-    const previous = board;
-    setBoard({
-      ...board,
-      columns: board.columns.map((c) => ({
-        ...c,
-        tasks: c.tasks.filter((t) => t.id !== taskId),
-      })),
-    });
-
-    try {
-      await apiFetch(`/tasks/${taskId}`, { method: "DELETE" });
-    } catch {
-      setBoard(previous);
     }
   }
 
@@ -123,14 +127,53 @@ export function BoardView({
     >
       {/* The Figma comment thread confirms the board scrolls horizontally. */}
       <div className="flex h-full gap-3 overflow-x-auto px-4 pb-4">
-        {visible.map((column) => (
-          <BoardColumn
-            key={column.id}
-            column={column}
-            onCreateTask={(columnId, title) => void onCreateTask(columnId, title)}
-            onDeleteTask={handleDeleteTask}
-          />
-        ))}
+        <SortableContext
+          items={columns.map((c) => `${COLUMN_DND_PREFIX}${c.id}`)}
+          strategy={horizontalListSortingStrategy}
+        >
+          {columns.map((column) => (
+            <BoardColumn
+              key={column.id}
+              column={column}
+              onCreateTask={onCreateTask}
+              onDeleteTask={onDeleteTask}
+              onRenameColumn={onRenameColumn}
+              onDeleteColumn={onDeleteColumn}
+            />
+          ))}
+        </SortableContext>
+
+        <div className="w-[300px] shrink-0">
+          {addingColumn ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const input = e.currentTarget.elements[0] as HTMLInputElement;
+                const name = input.value.trim();
+                if (name) onCreateColumn(name);
+                setAddingColumn(false);
+              }}
+            >
+              <input
+                autoFocus
+                onBlur={() => setAddingColumn(false)}
+                onKeyDown={(e) => e.key === "Escape" && setAddingColumn(false)}
+                placeholder="Column name…"
+                aria-label="New column name"
+                className="w-full rounded-xl border bg-card px-3 py-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddingColumn(true)}
+              className="flex w-full items-center gap-1.5 rounded-xl border border-dashed px-3 py-2.5 text-sm text-muted-foreground hover:bg-accent"
+            >
+              <Plus className="size-4" />
+              Add column
+            </button>
+          )}
+        </div>
       </div>
 
       <DragOverlay dropAnimation={null}>
