@@ -15,7 +15,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
-      - key: DATABASE_URL # Neon pooled connection string
+      # Direct Neon string, not the -pooler one: migrate deploy's advisory lock
+      # hangs forever through pgbouncer and the service never binds a port.
+      - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGIN # https://<your-app>.vercel.app
         sync: false

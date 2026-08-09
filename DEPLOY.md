@@ -4,7 +4,12 @@ Web → Vercel, API → Render, Postgres → Neon.
 
 ## 1. Neon
 
-Create a project, copy the **pooled** connection string (`...-pooler...?sslmode=require`).
+Create a project, copy the **direct** connection string — the one *without*
+`-pooler` in the host (uncheck "Connection pooling" in the dashboard).
+
+Not the pooled one: `prisma migrate deploy` takes an advisory lock that
+pgbouncer cannot hold, so the start command hangs forever and the service never
+binds a port. A single Render instance has no need for the pooler anyway.
 
 ## 2. API on Render
 
@@ -25,6 +30,20 @@ Check: `curl https://<api>.onrender.com/api/health` → `{"status":"ok",...}`
 New Project → same repo → **Root Directory: `web`**. Framework auto-detects Next.js.
 
 Env var: `NEXT_PUBLIC_API_URL = https://<api>.onrender.com` (no trailing slash).
+
+Two settings that fail silently — the deploy reports Ready and every path
+returns a plain-text `NOT_FOUND`:
+
+- **Framework Preset must be Next.js, not Other.** With Other, Vercel runs the
+  build and then serves the folder as static files, so no route resolves. If
+  Build and Deployment shows a "Production Overrides" banner, the live
+  deployment was built with the wrong preset — push a new commit, redeploying
+  can carry the old config over.
+- **Deployment Protection** is on by default and walls the site behind a Vercel
+  login. Settings → Deployment Protection → Vercel Authentication → Disabled.
+
+Don't rename the project or hand-edit the generated `.vercel.app` domain — both
+detach the domain from its deployment and leave a dead alias.
 
 ## 4. Close the loop
 
