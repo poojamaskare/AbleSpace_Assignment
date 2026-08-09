@@ -10,6 +10,7 @@ import {
 
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -21,6 +22,12 @@ export class AuthController {
   @HttpCode(200)
   loginAsGuest() {
     return this.auth.loginAsGuest();
+  }
+
+  @Post('google')
+  @HttpCode(200)
+  loginWithGoogle(@Body() dto: GoogleLoginDto) {
+    return this.auth.loginWithGoogle(dto.code);
   }
 
   @Get('me')

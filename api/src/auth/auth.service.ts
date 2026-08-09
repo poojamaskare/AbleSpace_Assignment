@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 
@@ -10,12 +11,92 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { createStarterWorkspace } from './starter-workspace';
 
+type GoogleProfile = {
+  sub: string;
+  email: string;
+  email_verified: boolean;
+  name?: string;
+  picture?: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Google sign-in. The browser runs the GIS popup and sends us the one-time
+   * code; we redeem it here because that step needs the client secret.
+   *
+   * The id_token comes straight back from Google's token endpoint over TLS in
+   * response to a secret-authenticated request, so its payload is trusted as-is
+   * — no signature check and no google-auth-library needed. (Google documents
+   * this for the server-side code flow; a token received from a *client* would
+   * have to be verified.)
+   */
+  async loginWithGoogle(code: string) {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = this.config.get<string>('GOOGLE_CLIENT_SECRET');
+    if (!clientId || !clientSecret) {
+      throw new UnauthorizedException('Google sign-in is not configured');
+    }
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        // GIS popup flow: the code was minted against this literal, not a URL.
+        redirect_uri: 'postmessage',
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!res.ok) {
+      throw new UnauthorizedException('Google rejected the sign-in');
+    }
+
+    const { id_token } = (await res.json()) as { id_token?: string };
+    if (!id_token) throw new UnauthorizedException('Google returned no identity');
+
+    const profile = JSON.parse(
+      Buffer.from(id_token.split('.')[1], 'base64url').toString(),
+    ) as GoogleProfile;
+
+    if (!profile.email || !profile.email_verified) {
+      throw new UnauthorizedException('That Google account has no verified email');
+    }
+
+    // Email is the identity key here, matching the schema's unique constraint.
+    const existing = await this.prisma.user.findUnique({
+      where: { email: profile.email },
+    });
+
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: { avatarUrl: profile.picture ?? existing.avatarUrl },
+        })
+      : await this.prisma.user.create({
+          data: {
+            email: profile.email,
+            name: profile.name ?? profile.email.split('@')[0],
+            avatarUrl: profile.picture,
+          },
+        });
+
+    if (!existing) await createStarterWorkspace(this.prisma, user.id);
+
+    return {
+      accessToken: await this.jwt.signAsync({ sub: user.id }),
+      user: this.toPublicUser(user),
+    };
+  }
 
   /**
    * Guest login: mint a throwaway user and seed it with its own project so the

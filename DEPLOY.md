@@ -27,7 +27,7 @@ Set the two `sync: false` vars when prompted:
 | `DATABASE_URL`| Neon pooled string                                 |
 | `CORS_ORIGIN` | `https://<your-app>.vercel.app` (fill in after 3) |
 
-`JWT_SECRET` is generated for you. Migrations apply on every start.
+`JWT_SECRET` is generated for you. Migrations do **not** run on start — see step 1.
 
 Check: `curl https://<api>.onrender.com/api/health` → `{"status":"ok",...}`
 
@@ -51,7 +51,21 @@ returns a plain-text `NOT_FOUND`:
 Don't rename the project or hand-edit the generated `.vercel.app` domain — both
 detach the domain from its deployment and leave a dead alias.
 
-## 4. Close the loop
+## 4. Google sign-in (optional)
+
+Google Cloud Console → APIs & Services → Credentials → **OAuth client ID**,
+type **Web application**:
+
+- Authorized JavaScript origins: `http://localhost:3000` and
+  `https://<your-app>.vercel.app`
+- Authorized redirect URIs: none needed — the popup code flow uses
+  `postmessage`.
+
+Then set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` on Render, and
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID` (same id) on Vercel. Skip all three and the
+button renders disabled.
+
+## 5. Close the loop
 
 Put the real Vercel URL into `CORS_ORIGIN` on Render and redeploy. Preview
 deployments get their own URLs and will fail CORS — set `CORS_ORIGIN` to the

@@ -18,11 +18,16 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
-      # Direct Neon string, not the -pooler one: migrate deploy's advisory lock
-      # hangs forever through pgbouncer and the service never binds a port.
+      # Pooled Neon string (`-pooler`): runtime only, migrations are applied by
+      # hand from a laptop (see the startCommand note above).
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGIN # https://<your-app>.vercel.app
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      # Google sign-in. Leave unset and the login button stays disabled.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

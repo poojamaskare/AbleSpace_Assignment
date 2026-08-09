@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 
+import { GoogleLoginButton } from "@/components/auth/google-login-button";
 import { GuestLoginButton } from "@/components/auth/guest-login-button";
 import { ResumeSession } from "@/components/auth/resume-session";
-import { GoogleIcon } from "@/components/brand/google-icon";
 import { Logo } from "@/components/brand/logo";
-import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "Log in · Pyramid",
@@ -28,13 +27,7 @@ export default function LoginPage() {
 
         <div className="mt-6 space-y-3">
           <GuestLoginButton />
-
-          {/* Google sign-in is drawn in the design but out of scope for the
-              assignment's guest-login requirement — see README deviations. */}
-          <Button variant="outline" className="h-10 w-full rounded-full" disabled>
-            <GoogleIcon className="size-4" />
-            Login with Google
-          </Button>
+          <GoogleLoginButton />
         </div>
       </div>
 
