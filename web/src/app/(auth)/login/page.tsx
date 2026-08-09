@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { GuestLoginButton } from "@/components/auth/guest-login-button";
+import { ResumeSession } from "@/components/auth/resume-session";
 import { GoogleIcon } from "@/components/brand/google-icon";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 export default function LoginPage() {
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-8 px-4 py-10">
+      <ResumeSession />
       <Logo />
 
       <div className="w-full max-w-[400px] rounded-xl border bg-card p-6 shadow-sm sm:p-8">

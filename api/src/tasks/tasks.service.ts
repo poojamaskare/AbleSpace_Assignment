@@ -7,6 +7,7 @@ import {
 import { Priority } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { CreateTaskDto, MoveTaskDto, UpdateTaskDto } from './dto/task.dto';
 import { positionFor } from './position';
 
@@ -34,7 +35,10 @@ function toDateUpdate(value: string | null | undefined): Date | null | undefined
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   /**
    * Every mutation routes through here. Ownership is checked by joining to the
@@ -118,7 +122,7 @@ export class TasksService {
     );
   }
 
-  async create(userId: string, dto: CreateTaskDto) {
+  async create(userId: string, dto: CreateTaskDto, originSocketId?: string) {
     // A subtask lives wherever its parent lives; only top-level tasks need a
     // column from the client.
     let columnId = dto.columnId;
@@ -154,7 +158,7 @@ export class TasksService {
     await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
     const last = column.tasks[0];
 
-    return this.prisma.task.create({
+    const created = await this.prisma.task.create({
       data: {
         title: dto.title,
         description: dto.description,
@@ -174,9 +178,17 @@ export class TasksService {
       },
       include: TASK_INCLUDE,
     });
+
+    this.realtime.emit(column.projectId, 'task.created', created, originSocketId);
+    return created;
   }
 
-  async update(userId: string, id: string, dto: UpdateTaskDto) {
+  async update(
+    userId: string,
+    id: string,
+    dto: UpdateTaskDto,
+    originSocketId?: string,
+  ) {
     const task = await this.assertOwnedTask(userId, id);
     if (dto.labelIds) await this.assertLabelsInProject(task.projectId, dto.labelIds);
 
@@ -200,6 +212,7 @@ export class TasksService {
     });
 
     await this.recordChanges(id, userId, before, updated);
+    this.realtime.emit(task.projectId, 'task.updated', updated, originSocketId);
     return updated;
   }
 
@@ -237,14 +250,20 @@ export class TasksService {
     });
   }
 
-  async remove(userId: string, id: string) {
-    await this.assertOwnedTask(userId, id);
+  async remove(userId: string, id: string, originSocketId?: string) {
+    const task = await this.assertOwnedTask(userId, id);
     await this.prisma.task.delete({ where: { id } });
+    this.realtime.emit(task.projectId, 'task.deleted', { id }, originSocketId);
   }
 
   /** Drag-and-drop: move a task to `index` within `columnId`. */
-  async move(userId: string, id: string, dto: MoveTaskDto) {
-    await this.assertOwnedTask(userId, id);
+  async move(
+    userId: string,
+    id: string,
+    dto: MoveTaskDto,
+    originSocketId?: string,
+  ) {
+    const task = await this.assertOwnedTask(userId, id);
     await this.assertOwnedColumn(userId, dto.columnId);
 
     const siblings = await this.prisma.task.findMany({
@@ -253,7 +272,7 @@ export class TasksService {
       select: { position: true },
     });
 
-    return this.prisma.task.update({
+    const moved = await this.prisma.task.update({
       where: { id },
       data: {
         columnId: dto.columnId,
@@ -264,5 +283,8 @@ export class TasksService {
       },
       include: TASK_INCLUDE,
     });
+
+    this.realtime.emit(task.projectId, 'task.moved', moved, originSocketId);
+    return moved;
   }
 }

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Priority } from '@prisma/client';
 
-import { STARTER_COLUMNS, STARTER_LABELS } from '../auth/starter-workspace';
+import { STARTER_COLUMNS } from '../auth/starter-workspace';
 import { PrismaService } from '../prisma/prisma.service';
 import { positionFor } from '../tasks/position';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
@@ -81,10 +81,11 @@ export class ProjectsService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         leadId: userId,
         position: positionFor(last ? [last.position] : [], last ? 1 : 0),
+        // Columns only — a task needs somewhere to live. Tasks and labels are
+        // the user's to create.
         columns: {
           create: STARTER_COLUMNS.map((name, i) => ({ name, position: (i + 1) * 1000 })),
         },
-        labels: { create: STARTER_LABELS.map((name) => ({ name })) },
       },
       include: {
         lead: { select: { id: true, name: true, avatarUrl: true } },

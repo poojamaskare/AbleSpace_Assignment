@@ -1,4 +1,5 @@
 import { getToken } from "./auth";
+import { getSocketId } from "./socket";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -19,6 +20,9 @@ export class ApiError extends Error {
  */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
+  // Identifies this tab so the server can broadcast the resulting change to
+  // everyone except us — we already applied it optimistically.
+  const socketId = getSocketId();
 
   let res: Response;
   try {
@@ -27,6 +31,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(socketId ? { "X-Socket-Id": socketId } : {}),
         ...init.headers,
       },
     });

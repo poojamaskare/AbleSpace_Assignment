@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { positionFor } from '../tasks/position';
 import { CreateColumnDto, MoveColumnDto, UpdateColumnDto } from './dto/column.dto';
 
 @Injectable()
 export class ColumnsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   private async assertOwnedProject(userId: string, projectId: string) {
     const project = await this.prisma.project.findUnique({
@@ -40,7 +44,12 @@ export class ColumnsService {
     return column;
   }
 
-  async create(userId: string, projectId: string, dto: CreateColumnDto) {
+  async create(
+    userId: string,
+    projectId: string,
+    dto: CreateColumnDto,
+    originSocketId?: string,
+  ) {
     await this.assertOwnedProject(userId, projectId);
 
     const last = await this.prisma.column.findFirst({
@@ -49,7 +58,7 @@ export class ColumnsService {
       select: { position: true },
     });
 
-    return this.prisma.column.create({
+    const created = await this.prisma.column.create({
       data: {
         name: dto.name.trim(),
         projectId,
@@ -57,20 +66,36 @@ export class ColumnsService {
       },
       select: { id: true, name: true, position: true },
     });
+
+    this.realtime.emit(projectId, 'column.created', created, originSocketId);
+    return created;
   }
 
-  async rename(userId: string, columnId: string, dto: UpdateColumnDto) {
-    await this.assertOwnedColumn(userId, columnId);
+  async rename(
+    userId: string,
+    columnId: string,
+    dto: UpdateColumnDto,
+    originSocketId?: string,
+  ) {
+    const column = await this.assertOwnedColumn(userId, columnId);
 
-    return this.prisma.column.update({
+    const renamed = await this.prisma.column.update({
       where: { id: columnId },
       data: { name: dto.name?.trim() },
       select: { id: true, name: true, position: true },
     });
+
+    this.realtime.emit(column.projectId, 'column.updated', renamed, originSocketId);
+    return renamed;
   }
 
   /** Reorder a column, using the same sparse-position scheme as tasks. */
-  async move(userId: string, columnId: string, dto: MoveColumnDto) {
+  async move(
+    userId: string,
+    columnId: string,
+    dto: MoveColumnDto,
+    originSocketId?: string,
+  ) {
     const column = await this.assertOwnedColumn(userId, columnId);
 
     const siblings = await this.prisma.column.findMany({
@@ -79,7 +104,7 @@ export class ColumnsService {
       select: { position: true },
     });
 
-    return this.prisma.column.update({
+    const moved = await this.prisma.column.update({
       where: { id: columnId },
       data: {
         position: positionFor(
@@ -89,9 +114,12 @@ export class ColumnsService {
       },
       select: { id: true, name: true, position: true },
     });
+
+    this.realtime.emit(column.projectId, 'column.moved', moved, originSocketId);
+    return moved;
   }
 
-  async remove(userId: string, columnId: string) {
+  async remove(userId: string, columnId: string, originSocketId?: string) {
     const column = await this.assertOwnedColumn(userId, columnId);
 
     const remaining = await this.prisma.column.count({
@@ -105,5 +133,11 @@ export class ColumnsService {
 
     // Tasks cascade with the column; the client is warned before calling this.
     await this.prisma.column.delete({ where: { id: columnId } });
+    this.realtime.emit(
+      column.projectId,
+      'column.deleted',
+      { id: columnId },
+      originSocketId,
+    );
   }
 }

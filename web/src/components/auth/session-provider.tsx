@@ -5,6 +5,7 @@ import { createContext, use, useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { clearToken, getToken } from "@/lib/auth";
+import { disconnectSocket } from "@/lib/socket";
 
 export type SessionUser = {
   id: string;
@@ -56,6 +57,9 @@ export function useSignOut() {
   const router = useRouter();
   return () => {
     clearToken();
+    // The socket authenticated with the old token at connect time; leaving it
+    // open would keep the previous guest subscribed to their project's room.
+    disconnectSocket();
     router.replace("/login");
   };
 }

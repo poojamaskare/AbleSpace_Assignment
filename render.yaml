@@ -5,7 +5,9 @@ services:
     rootDir: api
     plan: free
     region: singapore
-    buildCommand: npm ci && npx prisma generate && npm run build
+    # --include=dev: Render sets NODE_ENV=production, which makes npm ci skip
+    # devDependencies — where the nest and prisma CLIs live.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     # Migrations run at start, not build: Render's build step has no guaranteed
     # network path to the database, the runtime one does.
     startCommand: npx prisma migrate deploy && node dist/main

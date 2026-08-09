@@ -12,6 +12,7 @@ import {
 
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OriginSocket } from '../realtime/origin-socket.decorator';
 import { CreateTaskDto, MoveTaskDto, UpdateTaskDto } from './dto/task.dto';
 import { TasksService } from './tasks.service';
 
@@ -26,8 +27,12 @@ export class TasksController {
   }
 
   @Post()
-  create(@CurrentUser() userId: string, @Body() dto: CreateTaskDto) {
-    return this.tasks.create(userId, dto);
+  create(
+    @CurrentUser() userId: string,
+    @Body() dto: CreateTaskDto,
+    @OriginSocket() socketId?: string,
+  ) {
+    return this.tasks.create(userId, dto, socketId);
   }
 
   @Patch(':id')
@@ -35,8 +40,9 @@ export class TasksController {
     @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: UpdateTaskDto,
+    @OriginSocket() socketId?: string,
   ) {
-    return this.tasks.update(userId, id, dto);
+    return this.tasks.update(userId, id, dto, socketId);
   }
 
   @Patch(':id/move')
@@ -44,13 +50,18 @@ export class TasksController {
     @CurrentUser() userId: string,
     @Param('id') id: string,
     @Body() dto: MoveTaskDto,
+    @OriginSocket() socketId?: string,
   ) {
-    return this.tasks.move(userId, id, dto);
+    return this.tasks.move(userId, id, dto, socketId);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  remove(@CurrentUser() userId: string, @Param('id') id: string) {
-    return this.tasks.remove(userId, id);
+  remove(
+    @CurrentUser() userId: string,
+    @Param('id') id: string,
+    @OriginSocket() socketId?: string,
+  ) {
+    return this.tasks.remove(userId, id, socketId);
   }
 }

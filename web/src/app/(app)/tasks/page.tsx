@@ -12,6 +12,7 @@ import { EMPTY_FILTERS, TaskFilter, type Filters } from "@/components/board/task
 import { ViewMenu } from "@/components/board/view-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useRealtimeBoard } from "@/hooks/use-realtime-board";
 import { apiFetch } from "@/lib/api";
 import { filterColumns } from "@/lib/board";
 import type { Board, Priority, Task } from "@/lib/types";
@@ -182,6 +183,9 @@ function TasksBoard() {
       setError(e instanceof Error ? e.message : "Could not delete column");
     }
   }, []);
+
+  // Live updates from this account's other tabs and devices.
+  useRealtimeBoard(activeProjectId, setBoard);
 
   const visibleColumns = useMemo(
     () => (board ? filterColumns(board.columns, query, filters) : []),
