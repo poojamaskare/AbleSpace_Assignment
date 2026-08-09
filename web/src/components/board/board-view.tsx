@@ -143,7 +143,7 @@ export function BoardView({
           ))}
         </SortableContext>
 
-        <div className="w-[300px] shrink-0">
+        <div className="w-[82vw] max-w-[300px] shrink-0 sm:w-[300px]">
           {addingColumn ? (
             <form
               onSubmit={(e) => {

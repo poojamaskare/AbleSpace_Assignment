@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
+/** Must match the `md:` classes below — Tailwind's md breakpoint. */
+const SIDEBAR_BREAKPOINT = "(min-width: 768px)";
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   // One piece of state drives both breakpoints: on desktop it collapses the
   // fixed sidebar, on mobile it opens the same sidebar inside a sheet.
@@ -18,9 +21,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <div className="flex h-svh w-full overflow-hidden">
-        <AppSidebar
-          className={cn("hidden lg:flex", collapsed && "lg:hidden")}
-        />
+        {/* Tablets (>=768px) have room for the real sidebar; below that it
+            lives in the sheet. SIDEBAR_BREAKPOINT keeps this in sync with the
+            toggle's matchMedia check — two different values would leave the
+            button doing nothing in the gap between them. */}
+        <AppSidebar className={cn("hidden md:flex", collapsed && "md:hidden")} />
 
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetContent side="left" className="w-[260px] p-0">
@@ -37,8 +42,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               className="size-8"
               aria-label="Toggle sidebar"
               onClick={() => {
-                // matchMedia keeps the two behaviours from fighting each other
-                if (window.matchMedia("(min-width: 1024px)").matches) {
+                if (window.matchMedia(SIDEBAR_BREAKPOINT).matches) {
                   setCollapsed((v) => !v);
                 } else {
                   setOpen(true);

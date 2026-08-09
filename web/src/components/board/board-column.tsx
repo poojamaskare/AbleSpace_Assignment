@@ -79,7 +79,9 @@ export function BoardColumn({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "flex w-[300px] shrink-0 flex-col rounded-xl border bg-muted/40 transition-colors",
+        // On phones a column takes most of the viewport so the next one peeks
+        // in — the cue that the board scrolls sideways. Fixed width from sm up.
+        "flex w-[82vw] max-w-[300px] shrink-0 flex-col rounded-xl border bg-muted/40 transition-colors sm:w-[300px]",
         isOver && "bg-muted",
         isDragging && "opacity-50",
       )}

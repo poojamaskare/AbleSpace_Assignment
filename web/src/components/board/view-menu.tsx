@@ -25,9 +25,11 @@ export function ViewMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="h-9 gap-1.5">
+        {/* Label collapses on phones — the icon carries the meaning and the
+            toolbar has five controls competing for a narrow row. */}
+        <Button variant="outline" className="h-9 gap-1.5 px-2.5 sm:px-3" aria-label="Fields">
           <Columns3 className="size-4" />
-          Fields
+          <span className="hidden sm:inline">Fields</span>
         </Button>
       </DropdownMenuTrigger>
 

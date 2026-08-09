@@ -82,9 +82,9 @@ export function AddTaskDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button className="h-9 gap-1.5">
+        <Button className="h-9 gap-1.5 px-2.5 sm:px-3" aria-label="Add Task">
           <Plus className="size-4" />
-          Add Task
+          <span className="hidden sm:inline">Add Task</span>
         </Button>
       </DialogTrigger>
 

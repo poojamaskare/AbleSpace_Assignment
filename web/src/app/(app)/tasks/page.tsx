@@ -1,11 +1,13 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AddTaskDialog } from "@/components/board/add-task-dialog";
 import { BoardView } from "@/components/board/board-view";
 import { ListView } from "@/components/board/list-view";
+import { ProjectSwitcher, type ProjectOption } from "@/components/board/project-switcher";
 import { EMPTY_FILTERS, TaskFilter, type Filters } from "@/components/board/task-filter";
 import { ViewMenu } from "@/components/board/view-menu";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,24 @@ type NewTask = {
   dueDate?: string | null;
 };
 
+/** Remembers the last project opened, so returning to /tasks lands where you
+ *  left off instead of always on the first project. */
+const ACTIVE_PROJECT_KEY = "pyramid-active-project";
+
+// useSearchParams needs a Suspense boundary for this route to stay static.
 export default function TasksPage() {
+  return (
+    <Suspense
+      fallback={<p className="p-4 text-sm text-muted-foreground">Loading board…</p>}
+    >
+      <TasksBoard />
+    </Suspense>
+  );
+}
+
+function TasksBoard() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -31,11 +50,35 @@ export default function TasksPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewPrefs>(DEFAULT_VIEW);
 
+  // Which project the board shows. `?project=` wins so a board is linkable;
+  // otherwise the last one used, falling back to the user's default.
+  const projectParam = searchParams.get("project");
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(projectParam);
+
   useEffect(() => {
-    apiFetch<Board>("/projects/default/board")
-      .then(setBoard)
+    apiFetch<ProjectOption[]>("/projects")
+      .then((list) => {
+        setProjects(list);
+        setActiveProjectId((current) => {
+          if (current && list.some((p) => p.id === current)) return current;
+          const remembered = localStorage.getItem(ACTIVE_PROJECT_KEY);
+          if (remembered && list.some((p) => p.id === remembered)) return remembered;
+          return list[0]?.id ?? null;
+        });
+      })
       .catch((e: Error) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+
+    setBoard(null);
+    apiFetch<Board>(`/projects/${activeProjectId}/board`)
+      .then(setBoard)
+      .catch((e: Error) => setError(e.message));
+  }, [activeProjectId]);
 
   // Restored after mount so server and client markup agree on first render.
   useEffect(() => {
@@ -148,7 +191,16 @@ export default function TasksPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-        <h1 className="flex-1 text-xl font-semibold tracking-tight">Tasks</h1>
+        <div className="flex-1">
+          <ProjectSwitcher
+            projects={projects}
+            activeId={activeProjectId}
+            onSelect={(projectId) => {
+              setActiveProjectId(projectId);
+              router.replace(`/tasks?project=${projectId}`);
+            }}
+          />
+        </div>
 
         {searching ? (
           <Input
@@ -158,7 +210,9 @@ export default function TasksPage() {
             onBlur={() => !query && setSearching(false)}
             placeholder="Search tasks…"
             aria-label="Search tasks"
-            className="h-9 w-56"
+            // Full width on phones so the field is usable, fixed once there
+            // is room for the rest of the toolbar beside it.
+            className="h-9 w-full sm:w-56"
           />
         ) : (
           <Button
