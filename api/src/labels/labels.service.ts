@@ -1,11 +1,7 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { assertMember } from '../projects/membership';
 import { UpsertLabelDto } from './dto/label.dto';
 
 @Injectable()
@@ -15,22 +11,22 @@ export class LabelsService {
   private async assertOwnedProject(userId: string, projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, leadId: true },
+      select: { id: true },
     });
 
     if (!project) throw new NotFoundException('Project not found');
-    if (project.leadId !== userId) throw new ForbiddenException('Not your project');
+    await assertMember(this.prisma, userId, projectId);
     return project;
   }
 
   private async assertOwnedLabel(userId: string, labelId: string) {
     const label = await this.prisma.label.findUnique({
       where: { id: labelId },
-      select: { id: true, projectId: true, project: { select: { leadId: true } } },
+      select: { id: true, projectId: true },
     });
 
     if (!label) throw new NotFoundException('Label not found');
-    if (label.project.leadId !== userId) throw new ForbiddenException('Not your label');
+    await assertMember(this.prisma, userId, label.projectId);
     return label;
   }
 

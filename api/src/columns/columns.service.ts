@@ -1,11 +1,7 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { assertMember } from '../projects/membership';
 import { RealtimeService } from '../realtime/realtime.service';
 import { positionFor } from '../tasks/position';
 import { CreateColumnDto, MoveColumnDto, UpdateColumnDto } from './dto/column.dto';
@@ -20,27 +16,22 @@ export class ColumnsService {
   private async assertOwnedProject(userId: string, projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { id: true, leadId: true },
+      select: { id: true },
     });
 
     if (!project) throw new NotFoundException('Project not found');
-    if (project.leadId !== userId) throw new ForbiddenException('Not your project');
+    await assertMember(this.prisma, userId, projectId);
     return project;
   }
 
   private async assertOwnedColumn(userId: string, columnId: string) {
     const column = await this.prisma.column.findUnique({
       where: { id: columnId },
-      select: {
-        id: true,
-        projectId: true,
-        position: true,
-        project: { select: { leadId: true } },
-      },
+      select: { id: true, projectId: true, position: true },
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    if (column.project.leadId !== userId) throw new ForbiddenException('Not your column');
+    await assertMember(this.prisma, userId, column.projectId);
     return column;
   }
 

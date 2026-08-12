@@ -10,8 +10,10 @@ import { ListView } from "@/components/board/list-view";
 import { ProjectSwitcher, type ProjectOption } from "@/components/board/project-switcher";
 import { EMPTY_FILTERS, TaskFilter, type Filters } from "@/components/board/task-filter";
 import { ViewMenu } from "@/components/board/view-menu";
+import { AvatarStack } from "@/components/project/avatar-stack";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePresence } from "@/hooks/use-presence";
 import { useRealtimeBoard } from "@/hooks/use-realtime-board";
 import { apiFetch } from "@/lib/api";
 import { filterColumns } from "@/lib/board";
@@ -56,6 +58,7 @@ function TasksBoard() {
   const projectParam = searchParams.get("project");
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projectParam);
+  const viewers = usePresence(activeProjectId);
 
   useEffect(() => {
     apiFetch<ProjectOption[]>("/projects")
@@ -205,6 +208,16 @@ function TasksBoard() {
             }}
           />
         </div>
+
+        {/* Who else is on this board right now. Hidden when you are alone —
+            a stack of one is just your own face staring back. */}
+        {viewers.length > 1 ? (
+          <AvatarStack
+            users={viewers}
+            className="mr-1"
+            title={`${viewers.length} people on this board`}
+          />
+        ) : null}
 
         {searching ? (
           <Input

@@ -1,6 +1,7 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 import { Trim } from '../../common/trim.decorator';
+import { AVATAR_PRESETS } from '../avatars';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -26,4 +27,10 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(40)
   username?: string;
+
+  /** Only one of ours: an arbitrary URL here would let anyone point every
+   *  teammate's avatar at a host of their choosing. */
+  @IsOptional()
+  @IsIn(AVATAR_PRESETS)
+  avatarUrl?: string;
 }

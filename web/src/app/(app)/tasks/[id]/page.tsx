@@ -9,9 +9,9 @@ import { useSession } from "@/components/auth/session-provider";
 import { CommentThread } from "@/components/task/comment-thread";
 import { DueDatePicker } from "@/components/task/due-date-picker";
 import { SubtaskList } from "@/components/task/subtask-list";
+import { AssigneePicker } from "@/components/task/assignee-picker";
 import { LabelPicker } from "@/components/task/label-picker";
 import { PrioritySelect } from "@/components/task/priority-select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { apiFetch } from "@/lib/api";
 import type { Priority, Task, TaskDetail } from "@/lib/types";
 
@@ -187,18 +187,28 @@ export default function TaskDetailPage() {
 
         <div className="grid grid-cols-1 gap-1 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-2">
           <dt className="text-muted-foreground">Assignees</dt>
-          <dd className="flex items-center gap-1.5">
-            {task.assignees.map((a) => (
-              <span key={a.id} className="flex items-center gap-1.5">
-                <Avatar className="size-5">
-                  <AvatarImage src={a.avatarUrl ?? undefined} alt="" />
-                  <AvatarFallback className="text-[9px]">
-                    {a.name.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-xs text-muted-foreground">{a.name}</span>
-              </span>
-            ))}
+          <dd>
+            <AssigneePicker
+              projectId={task.projectId}
+              selected={task.assignees}
+              onChange={(assigneeIds) =>
+                void patch(
+                  {
+                    // Optimistic: names the picker already knows, a placeholder
+                    // for anyone it does not. The reload settles it.
+                    assignees: assigneeIds.map(
+                      (uid) =>
+                        task.assignees.find((a) => a.id === uid) ?? {
+                          id: uid,
+                          name: "…",
+                          avatarUrl: null,
+                        },
+                    ),
+                  },
+                  { assigneeIds },
+                )
+              }
+            />
           </dd>
         </div>
       </dl>

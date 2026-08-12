@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -24,6 +25,15 @@ export class CreateProjectDto {
   @IsOptional()
   @IsDateString()
   dueDate?: string | null;
+}
+
+export class JoinProjectDto {
+  /** Exactly six digits — anything else never matches a code, so it is rejected
+   *  here rather than spending a database lookup and a rate-limit slot. */
+  @Trim()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'A join code is six digits' })
+  code!: string;
 }
 
 export class UpdateProjectDto {

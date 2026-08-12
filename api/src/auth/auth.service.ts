@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { isPreset, randomAvatar } from './avatars';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { createStarterWorkspace } from './starter-workspace';
 
@@ -80,13 +81,19 @@ export class AuthService {
     const user = existing
       ? await this.prisma.user.update({
           where: { id: existing.id },
-          data: { avatarUrl: profile.picture ?? existing.avatarUrl },
+          data: {
+            // A picked preset survives the next sign-in; refreshing it from
+            // Google here would silently undo the user's choice.
+            avatarUrl: isPreset(existing.avatarUrl)
+              ? existing.avatarUrl
+              : (profile.picture ?? existing.avatarUrl),
+          },
         })
       : await this.prisma.user.create({
           data: {
             email: profile.email,
             name: profile.name ?? profile.email.split('@')[0],
-            avatarUrl: profile.picture,
+            avatarUrl: profile.picture ?? randomAvatar(),
           },
         });
 
@@ -111,6 +118,7 @@ export class AuthService {
         email: `guest-${id}@pyramid.local`,
         name: 'Guest',
         username: `guest-${id.slice(0, 8)}`,
+        avatarUrl: randomAvatar(),
         isGuest: true,
       },
     });
@@ -143,6 +151,7 @@ export class AuthService {
         email: dto.email,
         title: dto.title,
         username: dto.username,
+        avatarUrl: dto.avatarUrl,
       },
     });
 

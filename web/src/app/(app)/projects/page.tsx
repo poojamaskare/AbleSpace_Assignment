@@ -1,10 +1,22 @@
 "use client";
 
-import { MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  LogOut,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { PriorityIndicator } from "@/components/board/priority-indicator";
+import { useSession } from "@/components/auth/session-provider";
+import { AddProjectDialog } from "@/components/project/add-project-dialog";
+import { AvatarStack } from "@/components/project/avatar-stack";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,17 +32,21 @@ import type { Priority, UserSummary } from "@/lib/types";
 type ProjectRow = {
   id: string;
   name: string;
+  code: string;
   priority: Priority;
   dueDate: string | null;
   lead: UserSummary | null;
-  _count: { tasks: number };
+  members: { user: UserSummary }[];
+  _count: { tasks: number; members: number };
 };
 
 export default function ProjectsPage() {
+  const session = useSession();
   const [projects, setProjects] = useState<ProjectRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [composing, setComposing] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -45,14 +61,58 @@ export default function ProjectsPage() {
   }, [load]);
 
   async function createProject(name: string) {
+    const created = await apiFetch<ProjectRow>("/projects", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    setProjects((current) => [...(current ?? []), created]);
+    // Returned, not swallowed: the dialog shows the join code it carries.
+    return created;
+  }
+
+  async function joinProject(code: string) {
+    const joined = await apiFetch<ProjectRow>("/projects/join", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+
+    // Re-joining a project already in the list must not duplicate the row.
+    setProjects((current) => [
+      ...(current ?? []).filter((p) => p.id !== joined.id),
+      joined,
+    ]);
+    return joined;
+  }
+
+  async function copyCode(code: string) {
+    await navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+  }
+
+  /** For a leaked code. Members already in keep their access — only the old
+   *  code stops working. */
+  async function rotateCode(id: string) {
     try {
-      const created = await apiFetch<ProjectRow>("/projects", {
+      const updated = await apiFetch<ProjectRow>(`/projects/${id}/code`, {
         method: "POST",
-        body: JSON.stringify({ name }),
       });
-      setProjects((current) => [...(current ?? []), created]);
+      setProjects(
+        (current) => current?.map((p) => (p.id === id ? updated : p)) ?? current,
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create project");
+      setError(e instanceof Error ? e.message : "Could not change the code");
+    }
+  }
+
+  async function leaveProject(id: string) {
+    const previous = projects;
+    setProjects((current) => current?.filter((p) => p.id !== id) ?? current);
+
+    try {
+      await apiFetch(`/projects/${id}/members/me`, { method: "DELETE" });
+    } catch (e) {
+      setProjects(previous);
+      setError(e instanceof Error ? e.message : "Could not leave project");
     }
   }
 
@@ -89,10 +149,7 @@ export default function ProjectsPage() {
           />
         </div>
 
-        <Button className="h-9 gap-1.5" onClick={() => setComposing(true)}>
-          <Plus className="size-4" />
-          Add Project
-        </Button>
+        <AddProjectDialog onCreate={createProject} onJoin={joinProject} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-6">
@@ -105,7 +162,15 @@ export default function ProjectsPage() {
             <table className="w-full min-w-[640px] border-collapse">
               <thead>
                 <tr className="bg-muted/60 text-left">
-                  {["Projects", "Priority", "Lead", "Due Date", "Tasks"].map((h) => (
+                  {[
+                    "Projects",
+                    "Code",
+                    "Priority",
+                    "Lead",
+                    "Members",
+                    "Due Date",
+                    "Tasks",
+                  ].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-2 text-xs font-medium text-muted-foreground"
@@ -130,6 +195,21 @@ export default function ProjectsPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => void copyCode(project.code)}
+                        title="Copy join code"
+                        className="flex items-center gap-1.5 rounded font-mono text-sm tracking-widest text-muted-foreground hover:text-foreground"
+                      >
+                        {project.code}
+                        {copiedCode === project.code ? (
+                          <Check className="size-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2.5">
                       <PriorityIndicator priority={project.priority} />
                     </td>
                     <td className="px-4 py-2.5">
@@ -151,6 +231,15 @@ export default function ProjectsPage() {
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <AvatarStack
+                        users={project.members.map((m) => m.user)}
+                        total={project._count.members}
+                        title={`${project._count.members} member${
+                          project._count.members === 1 ? "" : "s"
+                        }`}
+                      />
                     </td>
                     <td className="px-4 py-2.5 text-sm text-muted-foreground">
                       {project.dueDate
@@ -179,14 +268,38 @@ export default function ProjectsPage() {
                           <DropdownMenuItem asChild>
                             <Link href={`/tasks?project=${project.id}`}>Open board</Link>
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            className="gap-2"
-                            onSelect={() => void deleteProject(project.id)}
-                          >
-                            <Trash2 className="size-4" />
-                            Delete
-                          </DropdownMenuItem>
+                          {project.lead?.id === session.id ? (
+                            <DropdownMenuItem
+                              className="gap-2"
+                              onSelect={() => void rotateCode(project.id)}
+                            >
+                              <RefreshCw className="size-4" />
+                              New join code
+                            </DropdownMenuItem>
+                          ) : null}
+
+                          {/* A member who joined by code can only leave —
+                              deleting would take the board from the whole
+                              team, which is the lead's call. */}
+                          {project.lead?.id === session.id ? (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              className="gap-2"
+                              onSelect={() => void deleteProject(project.id)}
+                            >
+                              <Trash2 className="size-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              className="gap-2"
+                              onSelect={() => void leaveProject(project.id)}
+                            >
+                              <LogOut className="size-4" />
+                              Leave project
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -194,14 +307,18 @@ export default function ProjectsPage() {
                 ))}
 
                 <tr className="border-t">
-                  <td colSpan={6} className="px-4 py-2">
+                  <td colSpan={8} className="px-4 py-2">
                     {composing ? (
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
                           const input = e.currentTarget.elements[0] as HTMLInputElement;
                           const name = input.value.trim();
-                          if (name) void createProject(name);
+                          if (name) {
+                            void createProject(name).catch((e: Error) =>
+                              setError(e.message),
+                            );
+                          }
                           setComposing(false);
                         }}
                       >

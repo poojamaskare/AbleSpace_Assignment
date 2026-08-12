@@ -88,6 +88,12 @@ export class UpdateTaskDto {
   @IsArray()
   @IsString({ each: true })
   labelIds?: string[];
+
+  /** Replaces the assignees outright; an empty array unassigns everyone. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  assigneeIds?: string[];
 }
 
 export class MoveTaskDto {

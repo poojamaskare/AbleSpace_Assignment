@@ -1,12 +1,8 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Priority } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { assertMember } from '../projects/membership';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CreateTaskDto, MoveTaskDto, UpdateTaskDto } from './dto/task.dto';
 import { positionFor } from './position';
@@ -41,15 +37,15 @@ export class TasksService {
   ) {}
 
   /**
-   * Every mutation routes through here. Ownership is checked by joining to the
-   * project's lead rather than trusting an id from the client — otherwise any
-   * authenticated guest could edit another guest's task by guessing an id.
+   * Every mutation routes through here. Access is checked against the project's
+   * membership rather than trusting an id from the client — otherwise any
+   * authenticated user could edit another team's task by guessing an id.
    */
   private async assertOwnedTask(userId: string, taskId: string) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
-      // Selects everything the callers need (ownership, placement, and the
-      // fields the activity feed narrates) so update() needs no second read.
+      // Selects everything the callers need (placement, and the fields the
+      // activity feed narrates) so update() needs no second read.
       select: {
         id: true,
         columnId: true,
@@ -57,28 +53,40 @@ export class TasksService {
         title: true,
         priority: true,
         dueDate: true,
-        project: { select: { leadId: true } },
       },
     });
 
     if (!task) throw new NotFoundException('Task not found');
-    if (task.project.leadId !== userId) {
-      throw new ForbiddenException('Not your task');
-    }
+    await assertMember(this.prisma, userId, task.projectId);
     return task;
   }
 
   private async assertOwnedColumn(userId: string, columnId: string) {
     const column = await this.prisma.column.findUnique({
       where: { id: columnId },
-      select: { id: true, projectId: true, project: { select: { leadId: true } } },
+      select: { id: true, projectId: true },
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    if (column.project.leadId !== userId) {
-      throw new ForbiddenException('Not your column');
-    }
+    await assertMember(this.prisma, userId, column.projectId);
     return column;
+  }
+
+  /**
+   * Only project members can be assigned. Without this a client could connect
+   * any user id it liked, putting strangers' faces on a board they cannot open
+   * — and leaking their names to whoever asked.
+   */
+  private async assertAssigneesInProject(projectId: string, userIds: string[]) {
+    if (userIds.length === 0) return;
+
+    const members = await this.prisma.projectMember.count({
+      where: { projectId, userId: { in: userIds } },
+    });
+
+    if (members !== new Set(userIds).size) {
+      throw new BadRequestException('Only project members can be assigned');
+    }
   }
 
   /**
@@ -135,14 +143,13 @@ export class TasksService {
       throw new BadRequestException('columnId is required for a top-level task');
     }
 
-    // One query for ownership AND the trailing position — each extra round
+    // One query for the column AND the trailing position — each extra round
     // trip to the database costs real latency on every card created.
     const column = await this.prisma.column.findUnique({
       where: { id: columnId },
       select: {
         id: true,
         projectId: true,
-        project: { select: { leadId: true } },
         tasks: {
           where: { parentId: dto.parentId ?? null },
           orderBy: { position: 'desc' },
@@ -153,7 +160,7 @@ export class TasksService {
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    if (column.project.leadId !== userId) throw new ForbiddenException('Not your column');
+    await assertMember(this.prisma, userId, column.projectId);
 
     await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
     const last = column.tasks[0];
@@ -191,10 +198,22 @@ export class TasksService {
   ) {
     const task = await this.assertOwnedTask(userId, id);
     if (dto.labelIds) await this.assertLabelsInProject(task.projectId, dto.labelIds);
+    if (dto.assigneeIds) {
+      await this.assertAssigneesInProject(task.projectId, dto.assigneeIds);
+    }
 
     // Read the fields we narrate before writing, so the activity entry can name
     // what actually changed rather than just what was sent.
     const before = task;
+
+    // Only when assignees are being touched — every other update should not pay
+    // for a query it has no use for.
+    const assignedBefore = dto.assigneeIds
+      ? await this.prisma.task.findUniqueOrThrow({
+          where: { id },
+          select: { assignees: { select: { id: true, name: true } } },
+        })
+      : null;
 
     const updated = await this.prisma.task.update({
       where: { id },
@@ -207,13 +226,48 @@ export class TasksService {
         startDate: toDateUpdate(dto.startDate),
         dueDate: toDateUpdate(dto.dueDate),
         labels: dto.labelIds ? { set: dto.labelIds.map((i) => ({ id: i })) } : undefined,
+        assignees: dto.assigneeIds
+          ? { set: dto.assigneeIds.map((i) => ({ id: i })) }
+          : undefined,
       },
       include: TASK_INCLUDE,
     });
 
     await this.recordChanges(id, userId, before, updated);
+
+    if (assignedBefore) {
+      await this.recordAssigneeChanges(
+        id,
+        userId,
+        assignedBefore.assignees,
+        updated.assignees,
+      );
+    }
+
     this.realtime.emit(task.projectId, 'task.updated', updated, originSocketId);
     return updated;
+  }
+
+  /** "assigned Sam" / "unassigned Sam" — the feed reads as a handover. */
+  private async recordAssigneeChanges(
+    taskId: string,
+    actorId: string,
+    before: { id: string; name: string }[],
+    after: { id: string; name: string }[],
+  ) {
+    const had = new Set(before.map((u) => u.id));
+    const has = new Set(after.map((u) => u.id));
+
+    const messages = [
+      ...after.filter((u) => !had.has(u.id)).map((u) => `assigned ${u.name}`),
+      ...before.filter((u) => !has.has(u.id)).map((u) => `unassigned ${u.name}`),
+    ];
+
+    if (messages.length === 0) return;
+
+    await this.prisma.activity.createMany({
+      data: messages.map((message) => ({ taskId, actorId, message })),
+    });
   }
 
   /** Narrate the field changes the design's Updates panel shows. */

@@ -15,6 +15,11 @@ export class PrismaService
     super({
       adapter: new PrismaPg({
         connectionString: config.getOrThrow<string>('DATABASE_URL'),
+        // Neon cuts idle connections (compute suspends after ~5 min); a socket
+        // the pool still believes in fails the next query with "Connection
+        // terminated unexpectedly". Retire ours first so the pool dials a fresh
+        // one instead of handing out a corpse.
+        idleTimeoutMillis: 10_000,
       }),
     });
   }

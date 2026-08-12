@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { assertMember } from '../projects/membership';
 import { CreateCommentDto } from './dto/comment.dto';
 
 const AUTHOR = { select: { id: true, name: true, avatarUrl: true } } as const;
@@ -17,11 +18,11 @@ export class CommentsService {
   private async assertOwnedTask(userId: string, taskId: string) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
-      select: { id: true, project: { select: { leadId: true } } },
+      select: { id: true, projectId: true },
     });
 
     if (!task) throw new NotFoundException('Task not found');
-    if (task.project.leadId !== userId) throw new ForbiddenException('Not your task');
+    await assertMember(this.prisma, userId, task.projectId);
     return task;
   }
 
