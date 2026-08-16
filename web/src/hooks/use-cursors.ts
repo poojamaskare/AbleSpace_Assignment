@@ -26,7 +26,15 @@ export function useCursors(projectId: string | null) {
     const socket = getSocket();
     const move = (c: Cursor) => setCursors((all) => ({ ...all, [c.socketId]: c }));
     const gone = (socketId: string) =>
-      setCursors(({ [socketId]: _removed, ...rest }) => rest);
+      setCursors((all) => {
+        // Fires for every departing socket, including ones that never moved a
+        // pointer — bail rather than re-render the board over nothing.
+        if (!(socketId in all)) return all;
+
+        const rest = { ...all };
+        delete rest[socketId];
+        return rest;
+      });
 
     socket.on("cursor", move);
     socket.on("cursor:gone", gone);
