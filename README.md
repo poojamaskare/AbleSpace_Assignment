@@ -25,7 +25,6 @@ cursors.
 - [Scripts](#scripts)
 - [Project structure](#project-structure)
 - [Testing](#testing)
-- [Known limits](#known-limits)
 - [Deployment](#deployment)
 
 ---
@@ -225,20 +224,6 @@ stale and corrupt localStorage; presence de-duplication; and theme resolution.
 
 ---
 
-## Known limits
-
-Each is marked in the code alongside its upgrade path.
-
-| Limit | Why it is acceptable | Upgrade path |
-| --- | --- | --- |
-| Join-code rate limiting is in memory | Resets on deploy, per-instance; fine for one instance | Move the counter to Redis before scaling out |
-| Positions can converge past float precision | Needs roughly fifty inserts into one exact gap | A rebalance pass on the column |
-| Live cursors are board view only | List rows are not pointed at the way cards are | Same hook, different geometry |
-| Cursor alignment drifts phone to desktop | Columns are fixed width above the small breakpoint, so desktop pairs align | Normalise x by content width |
-| Migrations are applied by hand | Through Neon's pooler the Prisma advisory lock hangs | Move into the start command if deploys outpace it |
-| Avatar preset list exists in both packages | Eight strings; a shared package costs more than it saves | Extract if the list grows |
-
----
 
 ## Deployment
 
