@@ -75,10 +75,11 @@ cursors.
 
 ## Screenshots
 
-> Add screenshots or a short demo clip here: the board with cards, the task
-> detail screen, and two windows side by side showing live cursors.
+<img width="2842" height="1495" alt="image" src="https://github.com/user-attachments/assets/3f08141d-e347-44c8-9850-b29fcfa60aed" />
+<img width="2864" height="1319" alt="image" src="https://github.com/user-attachments/assets/66c95db9-3d2b-4c56-97da-004665fba058" />
+<img width="2343" height="1475" alt="image" src="https://github.com/user-attachments/assets/c22aa377-9acb-4e3e-bd2b-63d800f50270" />
 
----
+
 
 ## Tech stack
 
