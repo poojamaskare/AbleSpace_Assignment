@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { positionFor } from '../tasks/position';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { withUniqueCode } from './join-code';
-import { assertMember, memberOf } from './membership';
+import { assertCanEdit, assertMember, memberOf } from './membership';
 
 /** Fields every task-shaped response returns, so the board, the list view and
  *  the detail screen all read the same shape. */
@@ -111,20 +111,8 @@ export class ProjectsService {
    * chat expects.
    */
   async join(userId: string, code: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { isGuest: true },
-    });
-
-    // A guest session is a throwaway identity nobody can recognise on a shared
-    // board, and it disappears with the browser — checked before the rate limit
-    // so a guest cannot burn their own allowance discovering this.
-    if (user.isGuest) {
-      throw new ForbiddenException(
-        'Sign in with Google to join a shared project',
-      );
-    }
-
+    // Guests may join, but only as viewers — the write gate (assertCanEdit)
+    // keeps them from changing a board they did not create.
     this.assertJoinAttemptAllowed(userId);
 
     const project = await this.prisma.project.findUnique({
@@ -170,8 +158,8 @@ export class ProjectsService {
   }
 
   async update(userId: string, projectId: string, dto: UpdateProjectDto) {
-    // Any member can rename or re-prioritise; only the lead can delete.
-    await assertMember(this.prisma, userId, projectId);
+    // Any editing member can rename or re-prioritise; only the lead can delete.
+    await assertCanEdit(this.prisma, userId, projectId);
 
     return this.prisma.project.update({
       where: { id: projectId },

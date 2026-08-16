@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { assertMember } from '../projects/membership';
+import { assertCanEdit } from '../projects/membership';
 import { RealtimeService } from '../realtime/realtime.service';
 import { positionFor } from '../tasks/position';
 import { CreateColumnDto, MoveColumnDto, UpdateColumnDto } from './dto/column.dto';
@@ -20,7 +20,7 @@ export class ColumnsService {
     });
 
     if (!project) throw new NotFoundException('Project not found');
-    await assertMember(this.prisma, userId, projectId);
+    await assertCanEdit(this.prisma, userId, projectId);
     return project;
   }
 
@@ -31,7 +31,7 @@ export class ColumnsService {
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    await assertMember(this.prisma, userId, column.projectId);
+    await assertCanEdit(this.prisma, userId, column.projectId);
     return column;
   }
 

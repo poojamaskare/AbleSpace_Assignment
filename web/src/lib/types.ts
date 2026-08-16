@@ -33,6 +33,8 @@ export type Column = {
 export type Board = {
   id: string;
   name: string;
+  /** Null once the lead's account is gone; the board outlives them. */
+  leadId: string | null;
   columns: Column[];
 };
 

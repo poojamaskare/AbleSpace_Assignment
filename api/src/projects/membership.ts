@@ -20,6 +20,41 @@ export async function assertMember(
   }
 }
 
+/**
+ * The write gate: a member who is allowed to change the board.
+ *
+ * A guest keeps full control of the projects they lead — their own starter
+ * workspace is theirs. On a board they joined with someone else's code they can
+ * watch but not touch: a guest identity is anonymous and disappears with the
+ * browser, so edits made under it cannot be attributed or undone by the team.
+ *
+ * One query answers all three questions (member? guest? lead?) because the
+ * membership row can reach both the project and the user.
+ */
+export async function assertCanEdit(
+  prisma: PrismaService,
+  userId: string,
+  projectId: string,
+) {
+  const member = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId } },
+    select: {
+      project: { select: { leadId: true } },
+      user: { select: { isGuest: true } },
+    },
+  });
+
+  if (!member) {
+    throw new ForbiddenException('You are not a member of this project');
+  }
+
+  if (member.user.isGuest && member.project.leadId !== userId) {
+    throw new ForbiddenException(
+      'Guests can view a shared board but not change it — sign in with Google to edit',
+    );
+  }
+}
+
 export async function isMember(
   prisma: PrismaService,
   userId: string,

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Priority } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { assertMember } from '../projects/membership';
+import { assertCanEdit, assertMember } from '../projects/membership';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CreateTaskDto, MoveTaskDto, UpdateTaskDto } from './dto/task.dto';
 import { positionFor } from './position';
@@ -41,7 +41,7 @@ export class TasksService {
    * membership rather than trusting an id from the client — otherwise any
    * authenticated user could edit another team's task by guessing an id.
    */
-  private async assertOwnedTask(userId: string, taskId: string) {
+  private async assertOwnedTask(userId: string, taskId: string, write = true) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
       // Selects everything the callers need (placement, and the fields the
@@ -57,19 +57,26 @@ export class TasksService {
     });
 
     if (!task) throw new NotFoundException('Task not found');
-    await assertMember(this.prisma, userId, task.projectId);
+    await this.assertAccess(userId, task.projectId, write);
     return task;
   }
 
-  private async assertOwnedColumn(userId: string, columnId: string) {
+  private async assertOwnedColumn(userId: string, columnId: string, write = true) {
     const column = await this.prisma.column.findUnique({
       where: { id: columnId },
       select: { id: true, projectId: true },
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    await assertMember(this.prisma, userId, column.projectId);
+    await this.assertAccess(userId, column.projectId, write);
     return column;
+  }
+
+  /** Reading needs membership; changing anything needs edit rights on top. */
+  private assertAccess(userId: string, projectId: string, write: boolean) {
+    return write
+      ? assertCanEdit(this.prisma, userId, projectId)
+      : assertMember(this.prisma, userId, projectId);
   }
 
   /**
@@ -107,7 +114,7 @@ export class TasksService {
   }
 
   findOne(userId: string, id: string) {
-    return this.assertOwnedTask(userId, id).then(() =>
+    return this.assertOwnedTask(userId, id, false).then(() =>
       this.prisma.task.findUnique({
         where: { id },
         include: {
@@ -160,7 +167,7 @@ export class TasksService {
     });
 
     if (!column) throw new NotFoundException('Column not found');
-    await assertMember(this.prisma, userId, column.projectId);
+    await assertCanEdit(this.prisma, userId, column.projectId);
 
     await this.assertLabelsInProject(column.projectId, dto.labelIds ?? []);
     const last = column.tasks[0];

@@ -1,21 +1,23 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { assertMember } from '../projects/membership';
+import { assertCanEdit, assertMember } from '../projects/membership';
 import { UpsertLabelDto } from './dto/label.dto';
 
 @Injectable()
 export class LabelsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async assertOwnedProject(userId: string, projectId: string) {
+  private async assertOwnedProject(userId: string, projectId: string, write = true) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { id: true },
     });
 
     if (!project) throw new NotFoundException('Project not found');
-    await assertMember(this.prisma, userId, projectId);
+    await (write
+      ? assertCanEdit(this.prisma, userId, projectId)
+      : assertMember(this.prisma, userId, projectId));
     return project;
   }
 
@@ -26,12 +28,14 @@ export class LabelsService {
     });
 
     if (!label) throw new NotFoundException('Label not found');
-    await assertMember(this.prisma, userId, label.projectId);
+    await assertCanEdit(this.prisma, userId, label.projectId);
     return label;
   }
 
   async findAll(userId: string, projectId: string) {
-    await this.assertOwnedProject(userId, projectId);
+    // A read: a guest viewing a shared board still needs the label list to
+    // render the chips on its cards.
+    await this.assertOwnedProject(userId, projectId, false);
     return this.prisma.label.findMany({
       where: { projectId },
       orderBy: { name: 'asc' },

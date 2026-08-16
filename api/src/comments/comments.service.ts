@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { assertMember } from '../projects/membership';
+import { assertCanEdit } from '../projects/membership';
 import { CreateCommentDto } from './dto/comment.dto';
 
 const AUTHOR = { select: { id: true, name: true, avatarUrl: true } } as const;
@@ -22,7 +22,7 @@ export class CommentsService {
     });
 
     if (!task) throw new NotFoundException('Task not found');
-    await assertMember(this.prisma, userId, task.projectId);
+    await assertCanEdit(this.prisma, userId, task.projectId);
     return task;
   }
 

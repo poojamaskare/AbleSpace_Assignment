@@ -10,6 +10,7 @@ import { ListView } from "@/components/board/list-view";
 import { ProjectSwitcher, type ProjectOption } from "@/components/board/project-switcher";
 import { EMPTY_FILTERS, TaskFilter, type Filters } from "@/components/board/task-filter";
 import { ViewMenu } from "@/components/board/view-menu";
+import { useSession } from "@/components/auth/session-provider";
 import { AvatarStack } from "@/components/project/avatar-stack";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ export default function TasksPage() {
 }
 
 function TasksBoard() {
+  const session = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [board, setBoard] = useState<Board | null>(null);
@@ -59,6 +61,9 @@ function TasksBoard() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projectParam);
   const viewers = usePresence(activeProjectId);
+
+  // Matches the server's write gate: a guest edits only what they lead.
+  const readOnly = session.isGuest && board !== null && board.leadId !== session.id;
 
   useEffect(() => {
     apiFetch<ProjectOption[]>("/projects")
@@ -187,8 +192,17 @@ function TasksBoard() {
     }
   }, []);
 
-  // Live updates from this account's other tabs and devices.
+  // Live updates from everyone in this project — other members' tabs included.
   useRealtimeBoard(activeProjectId, setBoard);
+
+  /** The inline composers have no error UI of their own, and `void promise`
+   *  turns a rejection into an unhandled one — a red overlay for what is
+   *  usually just the API restarting. Route it to the page banner instead. */
+  const report = useCallback(
+    (work: Promise<unknown>) =>
+      void work.catch((e: Error) => setError(e.message)),
+    [],
+  );
 
   const visibleColumns = useMemo(
     () => (board ? filterColumns(board.columns, query, filters) : []),
@@ -208,6 +222,14 @@ function TasksBoard() {
             }}
           />
         </div>
+
+        {/* A guest on someone else's board can watch but not edit; saying so
+            here beats letting every action fail with a 403. */}
+        {readOnly ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            View only
+          </span>
+        ) : null}
 
         {/* Who else is on this board right now. Hidden when you are alone —
             a stack of one is just your own face staring back. */}
@@ -262,7 +284,7 @@ function TasksBoard() {
           <ListView
             columns={visibleColumns}
             view={view}
-            onCreateTask={(columnId, title) => void createTask({ columnId, title })}
+            onCreateTask={(columnId, title) => report(createTask({ columnId, title }))}
             onDeleteTask={(id) => void deleteTask(id)}
           />
         ) : (
@@ -270,9 +292,9 @@ function TasksBoard() {
             board={board}
             setBoard={setBoard}
             columns={visibleColumns}
-            onCreateTask={(columnId, title) => void createTask({ columnId, title })}
+            onCreateTask={(columnId, title) => report(createTask({ columnId, title }))}
             onDeleteTask={(id) => void deleteTask(id)}
-            onCreateColumn={(name) => void createColumn(name)}
+            onCreateColumn={(name) => report(createColumn(name))}
             onRenameColumn={(id, name) => void renameColumn(id, name)}
             onDeleteColumn={(id) => void deleteColumn(id)}
           />

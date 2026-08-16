@@ -160,14 +160,7 @@ export function AddProjectDialog({
             </div>
 
             <div className="mt-4">
-              {/* A guest identity is throwaway and anonymous to the rest of the
-                  team, so joining is gated here as well as on the server. */}
-              {mode === "join" && session.isGuest ? (
-                <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-                  You are signed in as a guest. Sign in with Google to join a
-                  teammate&apos;s project.
-                </p>
-              ) : mode === "create" ? (
+              {mode === "create" ? (
                 <Input
                   autoFocus
                   value={name}
@@ -190,6 +183,15 @@ export function AddProjectDialog({
                   className="text-center font-mono text-lg tracking-[0.3em]"
                 />
               )}
+
+              {/* Said before joining, not discovered afterwards through a
+                  failed edit. */}
+              {mode === "join" && session.isGuest ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  As a guest you will join as a viewer — you can watch the board
+                  live, but not change it. Sign in with Google to edit.
+                </p>
+              ) : null}
             </div>
 
             {error ? (
@@ -202,10 +204,7 @@ export function AddProjectDialog({
               <Button
                 type="submit"
                 disabled={
-                  busy ||
-                  (mode === "create"
-                    ? !name.trim()
-                    : session.isGuest || code.length !== 6)
+                  busy || (mode === "create" ? !name.trim() : code.length !== 6)
                 }
               >
                 {mode === "create" ? "Create project" : "Join project"}

@@ -38,7 +38,7 @@ export type Viewer = { id: string; name: string; avatarUrl: string | null };
  *  It lives on `data` rather than on the socket itself because that is the only
  *  part `fetchSockets()` carries back — a plain property would read as
  *  undefined there and presence would always come out empty. */
-type SocketData = { viewer?: Viewer; projectId?: string };
+type SocketData = { viewer?: Viewer; projectId?: string; ready?: Promise<void> };
 
 type AuthedSocket = Socket & { userId?: string; data: SocketData };
 
@@ -63,8 +63,18 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
    * Sockets authenticate with the same JWT the REST API uses — an unverified
    * socket could otherwise subscribe to any project's room and read every
    * change broadcast to it.
+   *
+   * Nest does not await this hook, and the client emits `project:join` the
+   * moment `connect` fires — that packet beats the database round trip below,
+   * so the promise is parked on the socket for `join` to wait on. Without it
+   * every join was rejected for an unauthenticated socket and no client ever
+   * entered a room.
    */
-  async handleConnection(client: AuthedSocket) {
+  handleConnection(client: AuthedSocket) {
+    client.data.ready = this.authenticate(client);
+  }
+
+  private async authenticate(client: AuthedSocket) {
     const token = client.handshake.auth?.token as string | undefined;
 
     try {
@@ -86,7 +96,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /** A closed tab should remove its face from the board it was watching. */
   async handleDisconnect(client: AuthedSocket) {
-    if (client.data.projectId) await this.broadcastPresence(client.data.projectId);
+    if (!client.data.projectId) return;
+
+    // The pointer goes with the tab. Presence alone would leave it stranded
+    // mid-board, and a cursor that never moves again reads as a frozen app.
+    client.to(projectRoom(client.data.projectId)).emit('cursor:gone', client.id);
+    await this.broadcastPresence(client.data.projectId);
   }
 
   /**
@@ -109,6 +124,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() projectId: string,
   ) {
+    await client.data.ready;
     if (!client.userId || typeof projectId !== 'string') return { ok: false };
 
     if (!(await isMember(this.prisma, client.userId, projectId))) {
@@ -127,9 +143,39 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // Both rooms: the board just left loses a face, the one just entered gains
     // one. Broadcasting only the new room would leave a ghost on the old board.
-    if (previous && previous !== projectId) await this.broadcastPresence(previous);
+    if (previous && previous !== projectId) {
+      client.to(projectRoom(previous)).emit('cursor:gone', client.id);
+      await this.broadcastPresence(previous);
+    }
     await this.broadcastPresence(projectId);
 
     return { ok: true };
+  }
+
+  /**
+   * Where someone's pointer is on the board, relayed to the rest of the room.
+   *
+   * Deliberately not stored: a cursor is only ever interesting *now*, so a
+   * dropped packet costs one frame rather than leaving stale state to reconcile.
+   * The identity is stamped here from the authenticated socket — taking a user
+   * id from the payload would let any member wear a teammate's face.
+   */
+  @SubscribeMessage('cursor')
+  cursor(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() at: { x: number; y: number },
+  ) {
+    const { projectId, viewer } = client.data;
+    if (!projectId || !viewer) return;
+    if (!Number.isFinite(at?.x) || !Number.isFinite(at?.y)) return;
+
+    client.to(projectRoom(projectId)).emit('cursor', {
+      // Keyed by socket, not user: two tabs are two pointers, and only the
+      // socket id is what `cursor:gone` can identify on disconnect.
+      socketId: client.id,
+      user: viewer,
+      x: at.x,
+      y: at.y,
+    });
   }
 }
