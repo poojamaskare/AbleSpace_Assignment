@@ -83,10 +83,20 @@ function TasksBoard() {
     if (!activeProjectId) return;
     localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
 
+    // Switching boards leaves the previous fetch in flight, and whichever
+    // response lands last wins — so a slow one paints the old project's cards
+    // under the new project's name. Ignore anything that arrives after we've
+    // moved on.
+    let live = true;
+
     setBoard(null);
     apiFetch<Board>(`/projects/${activeProjectId}/board`)
-      .then(setBoard)
-      .catch((e: Error) => setError(e.message));
+      .then((next) => live && setBoard(next))
+      .catch((e: Error) => live && setError(e.message));
+
+    return () => {
+      live = false;
+    };
   }, [activeProjectId]);
 
   // Restored after mount so server and client markup agree on first render.
